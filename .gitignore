@@ -7,6 +7,7 @@ __pycache__/
 # gi.py 가 만드는 aicar/<프로젝트>/ 이미지 폴더 (원본 UI 이미지 _IMAGE/ 는 제외)
 aicar/*/
 !aicar/_IMAGE/
+!aicar/script/
 *.zip
 *.pickle
 *.pt
@@ -19,5 +20,3 @@ aicar/*/
 Thumbs.db
 .vscode/
 .idea/
-
-/docs 
