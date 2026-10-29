@@ -49,6 +49,7 @@
 | 영역 | 사용 기술 | 기반 코드 | 상태 |
 |------|-----------|-----------|------|
 | 주행 이미지 수집 | 수동 주행(키보드·마우스) 중 200x66 YUV 이미지 + 조향각 파일명 저장 | `gi.py` | 원본 |
+| 서보모터 수동 조작 | `gi.py` 에 서보모터 2개(`gpiozero` `AngularServo`) 키 조작 추가, 10° 단위·계속 이동, 0~180° | `gi_servo.py` | 추가 — 서보 용도 확정 필요 |
 | 데이터 편집·학습 | 조향각 7구간 분류, 훈련/평가/시험 분리, 증강, Pi 단독 학습 또는 ZIP 생성 | `dl.py` | 원본 |
 | 모델 학습 (GPU) | PyTorch Nvidia CNN 조향각 회귀, Google Colab T4 | `aicarA.ipynb` | 원본 |
 | 자율주행 | CNN 조향각 → 좌우 모터 PWM (`RUN_SPEED ± angle`), VL53L0X 경적·정지, 신호등 인식 | `ar.py` | 원본 |
@@ -85,6 +86,12 @@
 ```
 aicar/              원본 aicar 코드 (수정하지 않고 사용)
   gi.py             주행 이미지 수집
+  gi_servo.py       gi.py + 서보모터 2개 키 조작 (원본 아님, 팀 추가 파일)
+  script/           팀 추가 점검·도구 스크립트 (aicar 폴더에서 python3 script/<파일> 로 실행)
+    servo_test.py   서보모터 배선 점검 (서보만 0→90→180° 왕복)
+    mg90s_test.py   MG90S 서보 단독 테스트 (자동 점검 + 키 조작)
+    motor_test.py   DC 모터 점검 (왼쪽·오른쪽 따로, 직진·후진·회전 단계별)
+    power_check.py  Raspberry Pi 전압 부족 경고 (gi_servo.py, servo_test.py, mg90s_test.py 에서 사용)
   dl.py             이미지 편집 · 데이터 분리 · 학습(Pi 단독) · Colab 용 ZIP 생성
   aicarA.ipynb      Colab GPU 학습 노트북
   ar.py             자율주행
@@ -104,6 +111,9 @@ cd aicar
 
 # 1. 주행 이미지 수집 - wayA/ 폴더에 P0001__+12.png 형식으로 저장
 python3 gi.py wayA
+#    서보모터까지 쓰려면 gi_servo.py 로 실행 (사용법 동일)
+#    서보1 [1]/[2] 왼쪽·오른쪽 계속  [3]/[4] 왼쪽·오른쪽 10°  [5] 정지  (서보2 는 Q W E R T, [0] 둘 다 정지)
+python3 gi_servo.py wayA
 
 # 2. 데이터 편집 후 학습
 python3 dl.py wayA
@@ -127,8 +137,8 @@ python3 od.py
 |------|---------------|------|
 | `VL53L0X.py` (+ 관련 라이브러리) | `ar.py` | ToF 거리센서 |
 | `ts.py` | `ar.py` | 신호등 인식 |
-| `NEOPIXEL.py` | `ar.py`, `gi.py` | 네오픽셀 전조등 |
-| `_IMAGE/armL.png`, `armR.png`, `gimL.png`, `gimR.png`, `controlBox.png`, `dashBoard.png` | `ar.py`, `gi.py`, `dl.py` | 화면 UI 이미지 |
+| `NEOPIXEL.py` | `ar.py`, `gi.py`, `gi_servo.py` | 네오픽셀 전조등 |
+| `_IMAGE/armL.png`, `armR.png`, `gimL.png`, `gimR.png`, `controlBox.png`, `dashBoard.png` | `ar.py`, `gi.py`, `gi_servo.py`, `dl.py` | 화면 UI 이미지 |
 | `od_ssd.pbtxt`, `od_graph.pb`, `od_coco.names` | `od.py` | SSD 탐지 모델·클래스 이름 |
 
 ## 원본 코드 GPIO 배선 (BCM 번호)
@@ -143,9 +153,13 @@ python3 od.py
 
 VL53L0X 는 I²C, 네오픽셀은 `NEOPIXEL.py` 설정을 따릅니다.
 
+`gi_servo.py` 추가 배선 (확장보드 글씨 기준): 서보모터 1 → `P17` (물리 11번 핀), 서보모터 2 → `P27` (물리 13번 핀), 빨강 → `+5.0V`, 갈색 → `GND`.
+서보를 P12·P13(좌우 모터 PWM 핀)에 꽂으면 `gi.py` 실행 시 서보가 모터 신호를 받아 오동작하므로 꽂지 않습니다.
+
 ## 확인이 필요한 항목
 
 - [ ] 위 "저장소에 아직 없는 원본 파일" 확보
-- [ ] Raspberry Pi 에 필요한 패키지: OpenCV, NumPy, PyTorch, scikit-learn, RPi.GPIO, 네오픽셀·VL53L0X 라이브러리
+- [ ] Raspberry Pi 에 필요한 패키지: OpenCV, NumPy, PyTorch, scikit-learn, RPi.GPIO, gpiozero(`gi_servo.py`), 네오픽셀·VL53L0X 라이브러리
+- [ ] 서보모터 용도 확정 (카메라 방향 조정이면 이미지 수집 중 각도가 바뀌지 않도록 고정 필요)
 - [ ] `gi.py` 종료 시 `sudo chown pi:pi` 를 실행하므로 Pi 사용자 이름이 `pi` 가 아니면 확인 필요
 - [ ] LCD 를 쓰지 않으므로 전체화면 OpenCV 창은 VNC 원격 화면에서 확인
