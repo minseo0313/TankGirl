@@ -163,3 +163,65 @@ VL53L0X 는 I²C, 네오픽셀은 `NEOPIXEL.py` 설정을 따릅니다.
 - [ ] 서보모터 용도 확정 (카메라 방향 조정이면 이미지 수집 중 각도가 바뀌지 않도록 고정 필요)
 - [ ] `gi.py` 종료 시 `sudo chown pi:pi` 를 실행하므로 Pi 사용자 이름이 `pi` 가 아니면 확인 필요
 - [ ] LCD 를 쓰지 않으므로 전체화면 OpenCV 창은 VNC 원격 화면에서 확인
+## OV5647 카메라로 gi.py 실행
+
+`gi.py`는 libcamera에서 인식된 CSI 카메라를 Picamera2로 읽습니다. 카메라 입력은 640×480 BGR이며 기존 OpenCV 영상 처리를 유지합니다. OS 설정 변경은 [OV5647 카메라 인식 이슈](docs/issues/2026-11-06-ov5647-camera.md)를 참고하세요.
+
+라즈베리파이의 `~/aicar`에서 먼저 모터를 제어하지 않는 카메라 검사부터 실행합니다.
+
+```bash
+cd ~/aicar
+python3 check_camera.py
+```
+
+카메라 검사가 성공하면 VNC 데스크톱의 터미널에서 실행합니다. 모터를 제어하는 프로그램이므로 바퀴가 바닥에 닿지 않게 준비하세요.
+
+```bash
+sudo python3 gi.py
+```
+
+`No module named picamera2`가 나오면 Raspberry Pi OS 시스템 패키지를 설치하세요. 기존 OpenCV는 재설치하지 않습니다.
+
+```bash
+sudo apt update
+sudo apt install python3-picamera2
+```
+
+## 코드 전송과 접속
+
+아래 명령은 **PC의 Windows PowerShell**에서 실행합니다. IP는 모바일 핫스팟의 **연결된 장치**에서 확인해 바꾸세요. 비밀번호는 라즈베리파이 로그인 비밀번호입니다.
+
+### PC → 라즈베리파이
+
+`aicar` 폴더 전체 업로드 (`-r`: 하위 폴더 포함):
+
+```bash
+scp -r "C:\AutoTank\aicar" pi@192.168.137.195:/home/pi/
+```
+
+파일 하나만 업로드:
+
+```bash
+scp "C:\AutoTank\aicar\gi_servo.py" pi@192.168.137.195:/home/pi/aicar/
+```
+
+### 라즈베리파이 → PC
+
+`aicar` 폴더 전체 가져오기:
+
+```bash
+scp -r pi@192.168.137.195:/home/pi/aicar C:/AutoTank/
+```
+
+**같은 이름의 파일은 덮어씁니다.** 별도로 수정한 파일은 먼저 백업하세요. 폴더 전송에는 모델·사진 등도 포함되며, 목적지에만 있는 파일은 삭제하지 않습니다.
+
+### SSH 접속
+
+```bash
+ssh pi@192.168.137.195
+```
+
+접속 후 `pi@raspberrypi`가 표시되면 라즈베리파이 터미널입니다. SCP 업로드 명령은 별도 PowerShell 창에서 실행하세요. 접속 시간이 초과되면 핫스팟 연결과 현재 IP부터 확인합니다.
+
+핫스팟·VNC 설정 과정과 로그는 [접속 이슈 기록](docs/issues/2026-11-06-raspberry-pi-access.md)을 참고하세요. 이슈별 문서는 [docs/issues](docs/issues/)에 모읍니다.
+
