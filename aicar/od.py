@@ -17,9 +17,25 @@ import cv2
 
 thres = 0.5 # Threshold Detect
 
-cap = cv2.VideoCapture(0,cv2.CAP_V4L)       # 카메라 객체 생성
-cap.set(3,640)
-cap.set(4,480)
+from picamera2 import Picamera2
+# CSI 카메라는 libcamera 기반이라 cv2.VideoCapture(V4L)로는 영상이 None 으로 온다
+cap = Picamera2()                           # 카메라 객체 생성
+# RGB888은 Picamera2에서 OpenCV에 맞는 BGR 바이트 순서로 반환된다.
+cap.configure(cap.create_video_configuration(main={"size": (640, 480), "format": "RGB888"}))
+cap.start()
+# 화면 해상도로 늘려 표시하고(흰 여백 제거) 그리는 좌표는 그대로 유지한다.
+import re
+import subprocess
+display_info = subprocess.check_output(['xrandr', '--current'], text=True)
+display_match = re.search(r'current\s+(\d+)\s+x\s+(\d+)', display_info)
+if display_match is None:
+    raise RuntimeError('xrandr에서 현재 화면 해상도를 확인하지 못했습니다.')
+DISPLAY_X, DISPLAY_Y = map(int, display_match.groups())
+if DISPLAY_X <= 0 or DISPLAY_Y <= 0:
+    raise RuntimeError('화면 해상도는 양수여야 합니다.')
+cv2.namedWindow('Out', cv2.WINDOW_NORMAL | cv2.WINDOW_FREERATIO)
+cv2.setWindowProperty('Out', cv2.WND_PROP_ASPECT_RATIO, cv2.WINDOW_FREERATIO)
+cv2.setWindowProperty('Out', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
 configPath = 'od_ssd.pbtxt'
 weightsPath = 'od_graph.pb'
@@ -35,7 +51,9 @@ net.setInputMean((127.5, 127.5, 127.5)) # 이미지에서 빼야 할 평균 값�
 net.setInputSwapRB(True)                # 이미지의 색상 채널 순서를 변경하는 옵션
 
 while True:
-    _, img = cap.read()
+    img = cap.capture_array("main")
+    if img is None or img.shape != (480, 640, 3):
+        raise RuntimeError("카메라에서 640x480 컬러 영상을 받지 못했습니다.")
     classIds, confs, bbox = net.detect(img, confThreshold=thres)
     #print(classIds,bbox)
 
@@ -45,10 +63,11 @@ while True:
             cv2.putText(img,classNames[classId-1],(box[0]+10,box[1]+15),cv2.FONT_HERSHEY_PLAIN,1,(0,255,0),1)
             cv2.putText(img,f'{confidence*100:.2f}',(box[0]+10, box[1]+30),cv2.FONT_HERSHEY_PLAIN,1,(0,255,0),1)
 
-    cv2.imshow("Out", img)
+    cv2.imshow('Out', cv2.resize(img, (DISPLAY_X, DISPLAY_Y)))
     key = cv2.waitKey(1)    
 
     if key == ord(' ') or key == ord('x') or key == ord('X') or key == 27: # SPACE, 'x', 'X', ESC
         break
+cap.close()                                          # 카메라 반납
 cv2.destroyAllWindows()                              # 열려 있는 모든 윈도우를 닫기
 #############################################################################################

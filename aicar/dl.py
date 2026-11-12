@@ -30,6 +30,16 @@ import pickle                     # 파이썬 개채 저장과 읽기 라이브�
 import random                     # 랜덤(난수) 라이브러리
 import datetime                   # 날짜와 시간 라이브러리
 import numpy as np                # OpenCV의 이미지 데이터 저장 배열변수 라이브러리
+# 화면 해상도로 늘려 표시하고(흰 여백 제거) 그리는 좌표는 그대로 유지한다.
+import re
+import subprocess
+display_info = subprocess.check_output(['xrandr', '--current'], text=True)
+display_match = re.search(r'current\s+(\d+)\s+x\s+(\d+)', display_info)
+if display_match is None:
+    raise RuntimeError('xrandr에서 현재 화면 해상도를 확인하지 못했습니다.')
+DISPLAY_X, DISPLAY_Y = map(int, display_match.groups())
+if DISPLAY_X <= 0 or DISPLAY_Y <= 0:
+    raise RuntimeError('화면 해상도는 양수여야 합니다.')
 import zipfile as zf              # 압축 파일 생성 라이브러리
 
 import torch
@@ -756,10 +766,11 @@ def proc():
         cv.putText(outImg,s3,(70,472),cv.FONT_HERSHEY_COMPLEX_SMALL,0.9,CYAN)
         cv.putText(outImg,imageDir,(495,472),cv.FONT_HERSHEY_COMPLEX_SMALL,0.9,MAGENTA)
         #-----------------------------------------------------------------------------------
-        cv.namedWindow('Out',cv.WND_PROP_FULLSCREEN)
+        cv.namedWindow('Out', cv.WINDOW_NORMAL | cv.WINDOW_FREERATIO)
+        cv.setWindowProperty('Out', cv.WND_PROP_ASPECT_RATIO, cv.WINDOW_FREERATIO)
         cv.setWindowProperty('Out', cv.WND_PROP_FULLSCREEN, cv.WINDOW_FULLSCREEN)
         #-----------------------------------------------------------------------------------
-        cv.imshow('Out', outImg)
+        cv.imshow('Out', cv.resize(outImg, (DISPLAY_X, DISPLAY_Y)))
 
         #-----------------------------------------------------------------------------------
         keyBoard = cv.waitKey(0)    # 커맨드 키 입력을 기다린다.
@@ -1275,10 +1286,11 @@ def resultShow():
     cv.putText(outImg,t,(500,75+368),cv.FONT_HERSHEY_PLAIN,2,WHITE)
     cv.putText(outImg,imageDir,(50,180),cv.FONT_HERSHEY_COMPLEX_SMALL,1,GREEN) # 프로젝트 이름
     #---------------------------------------------------------------------------------------
-    cv.namedWindow('Out',cv.WND_PROP_FULLSCREEN)
+    cv.namedWindow('Out', cv.WINDOW_NORMAL | cv.WINDOW_FREERATIO)
+    cv.setWindowProperty('Out', cv.WND_PROP_ASPECT_RATIO, cv.WINDOW_FREERATIO)
     cv.setWindowProperty('Out', cv.WND_PROP_FULLSCREEN, cv.WINDOW_FULLSCREEN)
     #---------------------------------------------------------------------------------------
-    cv.imshow('Out', outImg)
+    cv.imshow('Out', cv.resize(outImg, (DISPLAY_X, DISPLAY_Y)))
     cv.imwrite(f'./{imageDir}/_{imageDir}_RESULT.png', outImg)
     #---------------------------------------------------------------------------------------
     cv.waitKey(0)                          # 어떤 키든 눌려질 때까지 대기

@@ -275,9 +275,12 @@ MOTOR_R_DIR = 6             # GPIO.6   오른쪽 모터 방향 (Motor Rotation D
 SERVO1_PIN = 17             # GPIO.17  서보모터 1 신호: 확장보드 P17 = 물리 11번 핀 (DC 모터 PWM 12·13 과 겹치지 않게)
 SERVO2_PIN = 27             # GPIO.27  서보모터 2 신호: 확장보드 P27 = 물리 13번 핀
 # Video Window ------------------------------------------------------------------------------
-cam = cv.VideoCapture(0,cv.CAP_V4L)   # 카메라 객체 생성
-cam.set(3,VIDEO_X)                    # 카메라 입력 화면 X 크기
-cam.set(4,VIDEO_Y)                    # 카메라 입력 화면 Y 크기
+from picamera2 import Picamera2       # CSI 카메라는 libcamera 기반이라 cv.VideoCapture(V4L)로는 영상이 None 으로 온다
+DISPLAY_X, DISPLAY_Y = 800, 480       # 실제 화면 해상도 (__main__ 에서 xrandr 로 다시 읽음)
+cam = Picamera2()                     # 카메라 객체 생성
+# RGB888은 Picamera2에서 OpenCV에 맞는 BGR 바이트 순서로 반환된다.
+cam.configure(cam.create_video_configuration(main={"size": (VIDEO_X, VIDEO_Y), "format": "RGB888"}))
+cam.start()
 # Set up ------------------------------------------------------------------------------------
 GPIO.setmode(GPIO.BCM)                # GPIO 핀 번호를 BCM 방식으로 설정 
 GPIO.setwarnings(False)               # 부팅시 경고 메시지 출력(터미널 창에서)안보기로 설정
@@ -356,7 +359,8 @@ viewWin = np.zeros((480,800,3),np.uint8)  # 표시되는 윈도우 가로, 세�
 msgBoxL = cv.imread('./_IMAGE/gimL.png',cv.IMREAD_COLOR)
 msgBoxR = cv.imread('./_IMAGE/gimR.png',cv.IMREAD_COLOR)
 #--------------------------------------------------------------------------------------------
-cv.namedWindow('Out',cv.WND_PROP_FULLSCREEN)
+cv.namedWindow('Out', cv.WINDOW_NORMAL | cv.WINDOW_FREERATIO)
+cv.setWindowProperty('Out', cv.WND_PROP_ASPECT_RATIO, cv.WINDOW_FREERATIO)
 cv.setWindowProperty('Out', cv.WND_PROP_FULLSCREEN, cv.WINDOW_FULLSCREEN)
 # Motor Run Function ------------------------------------------------------------------------
 def motorRun(leftMotor, rightMotor):
@@ -474,7 +478,8 @@ def controlMain(event,x,y,flags,param):
     global recordOn, cursorColor
     global mouseCtrlState, oneShot
 
-    mouseX = x; mouseY = y             # 마우스가 움직임으로 인터럽트가 발생하여 
+    mouseX = min(799, max(0, x * 800 // DISPLAY_X))  # 화면 좌표를 800x480 좌표로 변환
+    mouseY = min(479, max(0, y * 480 // DISPLAY_Y))
                                        # 마우스 좌표값 X, Y를 전역변수 mouseX, mouseY에 저장
     if event == cv.EVENT_LBUTTONDOWN:  # 마우스 왼쪽 버튼 이벤트 발생
         if mouseCtrlState == False:    # 마우스에 의한 차량 제어 
@@ -511,13 +516,15 @@ def main():
     timeMemory = cv.getTickCount()     # 시스템 부팅 시 부터 1 mS 간격으로 카운트 업됩니다.
     powerTime = cv.getTickCount()      # 마지막 전원 상태 확인 시각
     #----------------------------------------------------------------------------------------
-    while(cam.isOpened()):             # 카메라 활성화 되어 있므면 무한 반복
+    while True:
 
         if (cv.getTickCount() - powerTime) / cv.getTickFrequency() > POWER_CHECK_PERIOD:
             powerTime = cv.getTickCount()
             checkPower('주행 중')        # 상태가 바뀔 때만 출력
 
-        ret, frame = cam.read()        # 카메라로부터 한장의 정지화면 데이터를 가져 옵니다.
+        frame = cam.capture_array("main")  # 카메라로부터 한장의 정지화면 데이터를 가져 옵니다.
+        if frame is None or frame.shape != (480, 640, 3):
+            raise RuntimeError("카메라에서 640x480 컬러 영상을 받지 못했습니다.")
         viewWin[0:480,0:80] = msgBoxL 
         viewWin[0:480,720:800] = msgBoxR 
         #------------------------------------------------------------------------------------
@@ -621,7 +628,7 @@ def main():
         cv.rectangle(viewWin,(80+212,7),(80+426,7+25),BLUE,-1)
         cv.putText(viewWin,saveFile[-14:],(80+212+8,7+18),cv.FONT_HERSHEY_COMPLEX_SMALL,1,CYAN)
         #------------------------------------------------------------------------------------
-        cv.imshow('Out', viewWin)           # 이미지를 LCD에 표시합니다.
+        cv.imshow('Out', cv.resize(viewWin, (DISPLAY_X, DISPLAY_Y)))  # 이미지를 LCD에 표시합니다.
         #------------------------------------------------------------------------------------
         keyBoard = cv.waitKey(1) & 0xFF     #print(hex(keyBoard)) # 키보드의 키 값 확인  
         if keyBoard == 0x1B or keyBoard == 0x09 or keyBoard == ord('x') or keyBoard == ord('X'):
@@ -723,7 +730,7 @@ def cleanup():
              ('서보모터 2 해제',   lambda: servo2 and servo2.close()),
              ('gpiozero 핀 해제',  closePinFactory),
              ('GPIO 초기화',       GPIO.cleanup),
-             ('카메라 반납',       cam.release),
+             ('카메라 반납',       cam.close),
              ('윈도우 닫기',       cv.destroyAllWindows)]
     for name, step in steps:
         try:
@@ -807,7 +814,16 @@ if __name__ == '__main__':
                 print('차선 검출 영역 데이터를 읽었습니다:', pathParmeter)
 
     # Mouse Event ---------------------------------------------------------------------------
-    cv.namedWindow('Out')                              # 윈도우 창을 생성합니다.
+    # 화면 해상도로 늘려 표시하고(흰 여백 제거) 저장·제어 좌표는 800x480을 유지한다.
+    import re
+    import subprocess
+    display_info = subprocess.check_output(['xrandr', '--current'], text=True)
+    display_match = re.search(r'current\s+(\d+)\s+x\s+(\d+)', display_info)
+    if display_match is None:
+        raise RuntimeError('xrandr에서 현재 화면 해상도를 확인하지 못했습니다.')
+    DISPLAY_X, DISPLAY_Y = map(int, display_match.groups())
+    if DISPLAY_X <= 0 or DISPLAY_Y <= 0:
+        raise RuntimeError('화면 해상도는 양수여야 합니다.')
     cv.setMouseCallback('Out', controlMain, viewWin)   # 마우스 제어 설정
     #----------------------------------------------------------------------------------------
     try:
