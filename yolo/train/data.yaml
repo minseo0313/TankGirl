@@ -1,0 +1,13 @@
+# 동물·사람 탐지 YOLO 학습 데이터 정의 (Ultralytics 형식)
+# 데이터셋 이미지·라벨은 Google Drive 에 두고 git 에 넣지 않습니다.
+# 클래스 순서는 학습된 모델(yolo/models/animal_yolo26n_ncnn/metadata.yaml)과 같아야 합니다.
+
+path: /content/drive/MyDrive/wildlife_yolo_project/dataset   # Colab 에서 Drive 를 연결한 경로
+train: images/train
+val: images/val
+test: images/test   # 재현율 85% 목표 평가용 (학습에 쓰지 않음)
+
+names:
+  0: person
+  1: roe_deer
+  2: wild_boar
