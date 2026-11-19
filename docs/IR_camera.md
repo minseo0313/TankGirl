@@ -3,7 +3,7 @@
 > **2026-11-06 현재 환경:** 아래 2026-11-05 Legacy 방식 확인 기록과 달리, 이번 Pi에서는 `start_x=1` 상태에서 카메라가 감지되지 않았습니다. `#start_x=1`, `camera_auto_detect=0`, `dtoverlay=ov5647`로 변경한 뒤 libcamera 인식·촬영에 성공했고 `gi.py`는 Picamera2로 변경했습니다. 재현 명령과 실제 로그는 [카메라 인식 이슈](issues/2026-11-06-ov5647-camera.md)를 기준으로 확인하세요. 아래 과거 코드·설정 설명이 현재 `gi.py`에도 그대로 적용되는 것은 아닙니다.
 
 주야간 자동 전환 적외선 카메라 모듈을 Raspberry Pi 4 에 연결해 주행·탐지 영상으로 쓰는 방법입니다.
-코드: `aicar/gi.py`, `aicar/gi_servo.py`, `aicar/ar.py`, `aicar/od.py` (카메라 여는 부분만 관련)
+코드: `aicar/gi.py`, `aicar/ar.py`, `aicar/od.py` (카메라 여는 부분만 관련)
 
 <p align="center"><img src="images/ir-camera.jpg" alt="OV5647 IR-CUT 적외선 카메라 모듈. 가운데 렌즈 위아래에 원형 IR 라이트 2개, 왼쪽에 회색 15핀 FFC 케이블(파란 끝단), 아래에 빨강·검정 2핀 전선" width="360"></p>
 
@@ -62,7 +62,6 @@
 | 파일 | 위치 | 코드 |
 |------|------|------|
 | `aicar/gi.py` | 262줄 | `cam = cv.VideoCapture(0,cv.CAP_V4L)` |
-| `aicar/gi_servo.py` | 278줄 | `cam = cv.VideoCapture(0,cv.CAP_V4L)` |
 | `aicar/ar.py` | 245줄 | `camera=cv.VideoCapture(0,cv.CAP_V4L)` |
 | `aicar/od.py` | 20줄 | `cap = cv2.VideoCapture(0,cv2.CAP_V4L)` |
 

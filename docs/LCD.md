@@ -1,7 +1,7 @@
 # LCD (Waveshare 4.3inch DSI LCD)
 
 Raspberry Pi 4 의 DSI 단자에 연결하는 4.3인치 터치 화면 정리입니다.
-코드: `aicar/gi.py`, `aicar/gi_servo.py` (주행 화면 `Out` 창을 띄우는 부분)
+코드: `aicar/gi.py` (주행 화면 `Out` 창을 띄우는 부분)
 
 <p align="center"><img src="images/dsi-lcd.jpg" alt="Waveshare 4.3inch DSI LCD 뒷면. 파란 기판에 '4.3inch DSI LCD, Capacitive Touch Screen, 800×480 Pixels, Rev2.2' 인쇄, 오른쪽에 회색 15핀 FFC 케이블 연결, 네 모서리에 스탠드오프" width="420"></p>
 
@@ -65,10 +65,10 @@ dtoverlay=vc4-kms-dsi-7inch
 
 | 파일 | 위치 | 내용 |
 |------|------|------|
-| `aicar/gi_servo.py` | 355줄 | `viewWin = np.zeros((480,800,3),np.uint8)` — 800 × 480 창 |
-| `aicar/gi_servo.py` | 359~360줄 | `Out` 창을 전체화면으로 띄움 |
-| `aicar/gi_servo.py` | 521~524줄 | 왼쪽 80px·오른쪽 80px 메시지 칸, 가운데 640 × 480 카메라 영상 |
-| `aicar/gi_servo.py` | 624줄 | `cv.imshow('Out', viewWin)` |
+| `aicar/gi.py` | 358줄 | `viewWin = np.zeros((480,800,3),np.uint8)` — 800 × 480 창 |
+| `aicar/gi.py` | 362~364줄 | `Out` 창을 전체화면으로 띄움 |
+| `aicar/gi.py` | 528~531줄 | 왼쪽 80px·오른쪽 80px 메시지 칸, 가운데 640 × 480 카메라 영상 |
+| `aicar/gi.py` | 631줄 | `cv.imshow('Out', cv.resize(viewWin, (DISPLAY_X, DISPLAY_Y)))` |
 
 - 조작 키는 `Out` 창을 클릭(터치)해 포커스를 준 뒤 입력합니다([DC_moter.md](DC_moter.md) 4절).
 - LCD 를 떼고 VNC 로 볼 때도 창 크기는 같습니다. VNC 해상도를 800 × 480 이상으로 두면 잘리지 않습니다.

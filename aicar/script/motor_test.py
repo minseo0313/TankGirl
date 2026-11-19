@@ -12,7 +12,7 @@ import time
 import RPi.GPIO as GPIO
 from power_check import checkPower   # Raspberry Pi 전압 부족 경고
 
-# gi.py / gi_servo.py 와 같은 핀 (GPIO BCM 번호)
+# gi.py / ar.py 와 같은 핀 (GPIO BCM 번호)
 MOTOR_L_PWM, MOTOR_L_DIR = 12, 5
 MOTOR_R_PWM, MOTOR_R_DIR = 13, 6
 SPEED = 70        # 시험 속도 (PWM 0~100)

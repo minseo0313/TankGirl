@@ -1,7 +1,7 @@
 # 서보모터 (MG90S)
 
 Tower Pro MG90S(180도형) 서보모터 2개를 Raspberry Pi 4 에서 키보드로 조작하는 방법입니다.
-코드: `aicar/gi_servo.py` (주행 프로그램 + 서보 조작), `aicar/script/mg90s_test.py` (서보 단독 테스트)
+코드: `aicar/gi.py` (이미지 수집 + 서보 조작), `aicar/ar.py` (자율주행 + 서보 조작), `aicar/script/mg90s_test.py` (서보 단독 테스트)
 
 <p align="center"><img src="images/mg90s.jpg" alt="Tower Pro MG90S 마이크로 서보모터. 갈색·빨강·주황 3선 케이블과 3핀 커넥터" width="360"></p>
 
@@ -44,7 +44,7 @@ Tower Pro MG90S(180도형) 서보모터 2개를 Raspberry Pi 4 에서 키보드�
 | 확장보드 글씨 | 보드에 인쇄된 이름, GPIO 번호와 같음 (P17 = GPIO17) | 확장보드에 꽂을 때 |
 
 서보 신호는 gpiozero 가 소프트웨어로 만들기 때문에 PWM 전용 핀이 아닌 일반 GPIO(17·27)에서도 됩니다.
-남는 핀으로 GPIO22(물리 15번)도 쓸 수 있습니다. 바꾸려면 `gi_servo.py`의 `SERVO1_PIN`, `SERVO2_PIN` 두 줄만 고칩니다.
+남는 핀으로 GPIO22(물리 15번)도 쓸 수 있습니다. 바꾸려면 `gi.py`·`ar.py`의 `SERVO1_PIN`, `SERVO2_PIN` 두 줄만 고칩니다.
 
 ### 핀 위치 (Raspberry Pi 4, 40핀 헤더)
 
@@ -75,10 +75,10 @@ Tower Pro MG90S(180도형) 서보모터 2개를 Raspberry Pi 4 에서 키보드�
 
 > 이 저장소의 다른 GPIO: DC 모터 방향 GPIO5(29번)·GPIO6(31번), CdS 빛 센서 GPIO25(22번). 서보 배선 때 건드리지 않습니다.
 
-> 서보(GPIO17·27)와 DC 모터(GPIO12·13 속도, GPIO5·6 방향)는 핀이 겹치지 않아 `gi_servo.py`에서 둘 다 동작합니다.
+> 서보(GPIO17·27)와 DC 모터(GPIO12·13 속도, GPIO5·6 방향)는 핀이 겹치지 않아 `gi.py`·`ar.py`에서 둘 다 동작합니다.
 > DC 모터 핀은 [DC_moter.md](DC_moter.md) 2절.
 
-## 2. 조작 키 (`gi_servo.py`)
+## 2. 조작 키 (`gi.py`, `ar.py`)
 
 카메라 화면 창(`Out`)을 **마우스로 한 번 클릭한 뒤** 누릅니다. 터미널을 클릭한 상태에서는 키가 먹지 않습니다.
 servo1 은 숫자 줄(1~5), servo2 는 그 바로 아래 줄(Q~T)을 같은 순서로 씁니다.
@@ -103,7 +103,7 @@ servo1 은 숫자 줄(1~5), servo2 는 그 바로 아래 줄(Q~T)을 같은 순�
 - 숫자 키패드(NumLock 켬)의 숫자도 됩니다. 대소문자 상관없습니다.
 - 키를 누를 때마다 터미널에 `[서보] servo1(P17) 왼쪽 100도` 처럼 출력됩니다.
 
-## 3. 코드 설명 (`gi_servo.py` 서보 부분)
+## 3. 코드 설명 (`gi.py`·`ar.py` 서보 부분)
 
 ### 설정값 (파일 위쪽 "서보모터 초기화")
 
@@ -152,23 +152,23 @@ sudo systemctl enable --now ssh
 
 ### 업로드 (노트북 PowerShell)
 
-`gi_servo.py`는 `aicar/script/power_check.py`를 불러 쓰므로 `script` 폴더도 같이 보냅니다.
+`gi.py`·`ar.py`는 `aicar/script/power_check.py`를 불러 쓰므로 `script` 폴더도 같이 보냅니다.
 
 ```
-scp C:\AutoTank\aicar\gi_servo.py pi@192.168.137.242:/home/pi/aicar/
+scp C:\AutoTank\aicar\gi.py pi@192.168.137.242:/home/pi/aicar/
 scp -r C:\AutoTank\aicar\script pi@192.168.137.242:/home/pi/aicar/
 ```
 
 - 처음이면 `yes` 입력 → 비밀번호 입력 (글자가 안 보이는 게 정상, **한/영 키 영어 상태** 확인)
-- `gi_servo.py 100%`, `power_check.py 100%` 등이 나오면 완료
+- `gi.py 100%`, `power_check.py 100%` 등이 나오면 완료
 - `script` 폴더 안: `power_check.py`(전압 확인), `servo_test.py`(배선 점검), `mg90s_test.py`(서보 단독 테스트)
-- Pi 쪽 기존 파일을 덮어쓰므로, 필요하면 먼저 Pi 에서 백업: `cp ~/aicar/gi_servo.py ~/aicar/gi_servo_backup.py`
+- Pi 쪽 기존 파일을 덮어쓰므로, 필요하면 먼저 Pi 에서 백업: `cp ~/aicar/gi.py ~/aicar/gi_backup.py`
 
 ### 실행 (Pi 터미널 또는 `ssh pi@192.168.137.242` 로 접속한 터미널)
 
 ```
 cd ~/aicar
-python3 gi_servo.py      # 카메라 + 화면 창 필요 (VNC 또는 Pi 모니터)
+python3 gi.py            # 카메라 + 화면 창 필요 (VNC 또는 Pi 모니터)
 python3 script/mg90s_test.py    # 서보만 테스트, 카메라·화면 없이 SSH 터미널에서도 됨
 ```
 

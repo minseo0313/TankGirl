@@ -16,7 +16,7 @@ from gpiozero import AngularServo
 from power_check import checkPower      # Raspberry Pi 전압 부족 경고
 from servo_test import PHYSICAL_PIN     # GPIO(BCM) 번호 → 물리 핀 번호
 
-DEFAULT_PIN = 17       # gi_servo.py 의 servo1 과 같은 핀 (물리 11번)
+DEFAULT_PIN = 17       # gi.py·ar.py 의 servo1 과 같은 핀 (물리 11번)
 # MG90S 데이터시트: 50Hz, 0.5ms(0도) ~ 2.5ms(180도). gpiozero 기본값(1~2ms)이면 약 90도만 움직입니다.
 MIN_PULSE = 0.0005
 MAX_PULSE = 0.0025

@@ -14,7 +14,7 @@ import time
 from gpiozero import AngularServo
 from power_check import checkPower   # Raspberry Pi 전압 부족 경고
 
-DEFAULT_PINS = [17, 27]      # 핀을 지정하지 않았을 때: gi_servo.py 의 servo1·servo2 와 같은 핀 (물리 11·13번)
+DEFAULT_PINS = [17, 27]      # 핀을 지정하지 않았을 때: gi.py·ar.py 의 servo1·servo2 와 같은 핀 (물리 11·13번)
 # GPIO(BCM) 번호 → 40 핀 헤더 물리 핀 번호
 PHYSICAL_PIN = {2: 3, 3: 5, 4: 7, 17: 11, 27: 13, 22: 15, 10: 19, 9: 21, 11: 23, 0: 27,
                 5: 29, 6: 31, 13: 33, 19: 35, 26: 37, 14: 8, 15: 10, 18: 12, 23: 16, 24: 18,
