@@ -150,9 +150,7 @@ SERVO2_PIN = 27                       # GPIO.27  서보모터 2 신호: 확장�
 # Raspberry Pi GPIO Pin 설정
 GPIO.setwarnings(False)               # GPIO 관련 경고 메시지 출력 금지
 GPIO.setmode(GPIO.BCM)                # BCM 핀 번호
-GPIO.setup(MOTOR_L_PWM,GPIO.OUT)      # 왼쪽 모터 펄스폭
 GPIO.setup(MOTOR_L_DIR,GPIO.OUT)      # 왼쪽 모터 방향
-GPIO.setup(MOTOR_R_PWM,GPIO.OUT)      # 오른쪽 모터 펄스폭
 GPIO.setup(MOTOR_R_DIR,GPIO.OUT)      # 오른쪽 모터 방향
 GPIO.setup(BUZZER,GPIO.OUT)           # 경적 
 GPIO.setup(MUSIC,GPIO.OUT)            # 후진 사운드 
@@ -161,10 +159,28 @@ GPIO.setup(LAMP_L_YELLOW,GPIO.OUT)    # 좌회전 깜빡이 램프
 GPIO.setup(LAMP_BRAKE,GPIO.OUT)       # 브레이크 램프
 GPIO.setup(LIGHT_SENSOR, GPIO.IN, pull_up_down=GPIO.PUD_UP) # 빛감지 센서(CdS) 입력, 풀-업 모드
 # DC Motor 설정 ------------------------------------------------------------------------------
-MOTOR_L = GPIO.PWM(MOTOR_L_PWM,500)   # 왼쪽 모터 PWM(펄스폭 변조) 주파수 500Hz
-MOTOR_R = GPIO.PWM(MOTOR_R_PWM,500)   # 오른쪽 모터 PWM(펄스폭 변조) 주파수 500Hz
-MOTOR_L.start(0)                      # 왼쪽 모터 PWM(펄스폭 변조) 값 0 으로 시작
-MOTOR_R.start(0)                      # 오른쪽 모터 PWM(펄스폭 변조) 값 0 으로 시작
+class NoMotor:
+    '''서보모터에 핀을 넘겨준 모터 자리에 쓰는 빈 모터 (PWM 명령을 무시합니다).'''
+    def start(self, duty): pass
+    def stop(self): pass
+    def ChangeDutyCycle(self, duty): pass
+
+def motorInit(pin, name):
+    '''
+    모터 PWM 을 500Hz 로 시작합니다.
+    서보모터가 같은 핀을 쓰면 모터 PWM 을 만들지 않고 NoMotor 를 반환합니다.
+    (같은 핀에 PWM 을 두 번 만들면 RPi.GPIO 가 RuntimeError 를 냅니다.)
+    '''
+    if pin in (SERVO1_PIN, SERVO2_PIN):
+        print('[모터] %s PWM(P%d) 은 서보모터가 사용하므로 끕니다 → 이 모터는 동작하지 않습니다.' % (name, pin))
+        return NoMotor()
+    GPIO.setup(pin, GPIO.OUT)          # 모터 PWM 신호 출력 핀
+    motor = GPIO.PWM(pin, 500)         # 모터 PWM 주파수 500Hz
+    motor.start(0)                     # 펄스폭 변조(PWM)값 0 으로 시작
+    return motor
+
+MOTOR_L = motorInit(MOTOR_L_PWM, '왼쪽 모터')
+MOTOR_R = motorInit(MOTOR_R_PWM, '오른쪽 모터')
 #--------------------------------------------------------------------------------------------
 tof = VL53L0X.VL53L0X()               # 거리 감지 센서 객체 설정
 # ==============================

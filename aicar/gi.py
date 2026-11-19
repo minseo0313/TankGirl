@@ -152,8 +152,15 @@
 #     (17) 커서 Right: 
 #           차량이 우회전 합니다.
 #
-#     (18) [ESC],[TAB],X: 
+#     (18) [ESC],[TAB],X:
 #           이미지 수집 프로그램 실행을 마치고 커맨드 창으로 돌아갑니다.
+#
+#     (19) 서보모터 (180도형 MG90S, servo1 = 숫자 1~5 / servo2 = Q~T):
+#           [1]/[Q] 왼쪽으로 계속                      [2]/[W] 오른쪽으로 계속
+#           [3]/[E] 왼쪽으로 SERVO_STEP 도 가고 멈춤   [4]/[R] 오른쪽으로 SERVO_STEP 도 가고 멈춤
+#           [5]/[T] 정지(신호 끊음)                    [0] 두 서보 모두 정지
+#           이동 후 SERVO_HOLD_SEC 초가 지나면 신호를 끊어 그 자리에서 힘을 풉니다.
+#           [0] 두 서보모터 모두 정지
 #
 # F. 프로그램 종료시 pickle 에 저장되는 데이터
 #
@@ -215,6 +222,13 @@ import cv2 as cv            # 영상처리(OpenCV) 라이브러리
 import pickle               # python 객체 저장/읽기 라이브러리
 import RPi.GPIO as GPIO     # Raspberry Pi 헤터핀 제어 라이브러리
 import NEOPIXEL as nx       # NeoPixel 제어 라이브러리
+import traceback            # 오류 발생 위치 확인 라이브러리
+import warnings             # 라이브러리 경고 메시지 제어
+import threading            # 서보모터를 정해진 시간만 돌리고 멈추는 타이머
+from gpiozero import AngularServo, Device
+from script.power_check import checkPower  # Raspberry Pi 전압 부족 경고 (aicar/script/)
+# gpiozero 의 소프트웨어 PWM 경고는 아래 서보모터 초기화에서 한국어 안내로 대신 출력합니다.
+warnings.filterwarnings('ignore', message='To reduce servo jitter')
 # Constant ----------------------------------------------------------------------------------
 RED     =   0,  0,255       # Red
 GREEN   =   0,255,  0       # Green
@@ -258,21 +272,88 @@ MOTOR_L_PWM = 12            # GPIO.12  왼쪽 모터 펄스 푹 변조(Pulse Wid
 MOTOR_L_DIR = 5             # GPIO.5   원쪽 모터 방향 (Motor Rotation Direction)
 MOTOR_R_PWM = 13            # GPIO.13  오른쪽 모터 펄스 폭 변조(Pulse Width Modulation)
 MOTOR_R_DIR = 6             # GPIO.6   오른쪽 모터 방향 (Motor Rotation Direction)
+SERVO1_PIN = 17             # GPIO.17  서보모터 1 신호: 확장보드 P17 = 물리 11번 핀 (DC 모터 PWM 12·13 과 겹치지 않게)
+SERVO2_PIN = 27             # GPIO.27  서보모터 2 신호: 확장보드 P27 = 물리 13번 핀
 # Video Window ------------------------------------------------------------------------------
-from picamera2 import Picamera2
-DISPLAY_X, DISPLAY_Y = 800, 480
+from picamera2 import Picamera2       # CSI 카메라는 libcamera 기반이라 cv.VideoCapture(V4L)로는 영상이 None 으로 온다
+DISPLAY_X, DISPLAY_Y = 800, 480       # 실제 화면 해상도 (__main__ 에서 xrandr 로 다시 읽음)
+cam = Picamera2()                     # 카메라 객체 생성
+# RGB888은 Picamera2에서 OpenCV에 맞는 BGR 바이트 순서로 반환된다.
+cam.configure(cam.create_video_configuration(main={"size": (VIDEO_X, VIDEO_Y), "format": "RGB888"}))
+cam.start()
 # Set up ------------------------------------------------------------------------------------
 GPIO.setmode(GPIO.BCM)                # GPIO 핀 번호를 BCM 방식으로 설정 
 GPIO.setwarnings(False)               # 부팅시 경고 메시지 출력(터미널 창에서)안보기로 설정
-GPIO.setup(MOTOR_L_PWM,GPIO.OUT)      # 왼쪽 모터 PWM 신호 출력 핀 
 GPIO.setup(MOTOR_L_DIR,GPIO.OUT)      # 왼쪽 모터 방향 신호 출력 핀
-GPIO.setup(MOTOR_R_PWM,GPIO.OUT)      # 오른쪽 모터 PWM 신호 출력 핀 
 GPIO.setup(MOTOR_R_DIR,GPIO.OUT)      # 오른쪽 모터 방향 신호 출력 핀
-MOTOR_L = GPIO.PWM(MOTOR_L_PWM,500)   # 왼쪽 모터 PWM 주파수 500Hz
-MOTOR_R = GPIO.PWM(MOTOR_R_PWM,500)   # 오른쪽 모터 PWM 주파수 500Hz
-MOTOR_L.start(0)                      # 왼쪽 모터 펄스폭 변조(PWM)값 0 으로 시작
-MOTOR_R.start(0)                      # 오른쪽 모터 펄스폭 변조(PWM)값 0 으로 시작
+
+class NoMotor:
+    '''서보모터에 핀을 넘겨준 모터 자리에 쓰는 빈 모터 (PWM 명령을 무시합니다).'''
+    def start(self, duty): pass
+    def stop(self): pass
+    def ChangeDutyCycle(self, duty): pass
+
+def motorInit(pin, name):
+    '''
+    모터 PWM 을 500Hz 로 시작합니다.
+    서보모터가 같은 핀을 쓰면 모터 PWM 을 만들지 않고 NoMotor 를 반환합니다.
+    (같은 핀에 PWM 을 두 번 만들면 RPi.GPIO 가 RuntimeError 를 냅니다.)
+    '''
+    if pin in (SERVO1_PIN, SERVO2_PIN):
+        print('[모터] %s PWM(P%d) 은 서보모터가 사용하므로 끕니다 → 이 모터는 동작하지 않습니다.' % (name, pin))
+        return NoMotor()
+    GPIO.setup(pin, GPIO.OUT)          # 모터 PWM 신호 출력 핀
+    motor = GPIO.PWM(pin, 500)         # 모터 PWM 주파수 500Hz
+    motor.start(0)                     # 펄스폭 변조(PWM)값 0 으로 시작
+    return motor
+
+MOTOR_L = motorInit(MOTOR_L_PWM, '왼쪽 모터')
+MOTOR_R = motorInit(MOTOR_R_PWM, '오른쪽 모터')
 GPIO.setup(LIGHT_SENSOR, GPIO.IN, pull_up_down=GPIO.PUD_UP) # CdS 빛감지 센서 핀 방향(입력), 형태(풀업)설정
+
+# ==============================
+# 서보모터 초기화
+# ==============================
+SERVO_MIN = 0           # 서보모터 최소 각도
+SERVO_MAX = 180         # 서보모터 최대 각도
+SERVO_CENTER = 90       # 처음 움직일 때 기준 각도 (프로그램 시작 직후에는 서보 위치를 알 수 없음)
+SERVO_STEP = 10         # "10도" 키 1회 회전량 (도)
+SERVO_SWEEP_STEP = 2    # "계속" 키를 누른 뒤 화면 1장(루프 1회)마다 움직이는 각도 (약 1초에 60도)
+SERVO_LEFT = 1          # 왼쪽 = 각도 증가. 실제로 왼쪽·오른쪽이 반대로 돌면 -1 로 바꾸세요.
+# 이동 후 이 시간이 지나면 신호를 끊어 힘을 풉니다. 신호를 계속 주면 서보가 위치를 못 잡고 버티며 떨기 때문입니다.
+# 너무 짧으면 목표에 닿기 전에 끊겨 "가다가 멈춥니다" (0.5초에서 시작 키 90도 이동이 중간에 멈췄음, 2026-10-29 영상).
+SERVO_HOLD_SEC = 1.5
+# 펄스 폭: 0도 ~ 180도에 해당하는 신호 길이(초). MG90S 데이터시트 값은 0.5ms ~ 2.5ms 이지만
+# 이 서보는 2.5ms 에서 끝에 닿아 버티므로(끼익) 안쪽으로 줄였습니다. 아직 끝에서 버티면 더 줄이세요.
+SERVO_MIN_PULSE = 0.0006
+SERVO_MAX_PULSE = 0.0024
+
+def servoInit(pin, name):
+    '''
+    서보모터를 생성합니다. 신호를 보내지 않으므로 이동 키를 누르기 전까지 움직이지 않습니다.
+    실패하면 원인을 출력하고 None 을 반환하며, 서보모터 없이 주행·이미지 수집은 계속됩니다.
+    '''
+    try:
+        servo = AngularServo(pin, initial_angle=None, min_angle=SERVO_MIN, max_angle=SERVO_MAX,
+                             min_pulse_width=SERVO_MIN_PULSE, max_pulse_width=SERVO_MAX_PULSE)
+        print('[서보] %s 준비 완료 (정지, 이동 키를 누르면 움직입니다)' % name)
+        return servo
+    except Exception as e:
+        print('[서보 오류] %s 초기화 실패 → 이 서보모터는 사용하지 않습니다.' % name)
+        print('            원인: %s: %s' % (type(e).__name__, e))
+        print('            확인: gpiozero 설치, P%d 를 다른 장치가 쓰고 있지 않은지' % pin)
+        return None
+
+SERVO1_NAME = 'servo1(P%d)' % SERVO1_PIN      # 터미널 출력용 이름 (확장보드 글씨와 동일)
+SERVO2_NAME = 'servo2(P%d)' % SERVO2_PIN
+servo1 = servoInit(SERVO1_PIN, SERVO1_NAME)
+servo2 = servoInit(SERVO2_PIN, SERVO2_NAME)
+servoAngle = {SERVO1_NAME: SERVO_CENTER, SERVO2_NAME: SERVO_CENTER}  # 마지막으로 보낸 각도. 신호를 끊어도 기억합니다.
+servoTimer = {SERVO1_NAME: None, SERVO2_NAME: None}    # 이동 후 신호를 끊을 타이머
+servoSweep = {SERVO1_NAME: 0, SERVO2_NAME: 0}          # "계속" 방향 (+1 왼쪽 / -1 오른쪽, 0 = 안 함)
+print('[서보] 소프트웨어 PWM 사용 중: 서보가 조금 떨릴 수 있습니다 (pigpio 사용 시 개선).')
+checkPower('시작')
+POWER_CHECK_PERIOD = 1.0  # 주행 중 전원 상태 확인 간격 (초)
 #--------------------------------------------------------------------------------------------
 viewWin = np.zeros((480,800,3),np.uint8)  # 표시되는 윈도우 가로, 세로, 컬러층, 8비트
 msgBoxL = cv.imread('./_IMAGE/gimL.png',cv.IMREAD_COLOR)
@@ -309,6 +390,75 @@ def motorRun(leftMotor, rightMotor):
     #----------------------------------------------------------------------------------------
     MOTOR_L.ChangeDutyCycle(abs(leftMotor))  # 왼쪽 모터 PWM 값 지정
     MOTOR_R.ChangeDutyCycle(abs(rightMotor)) # 오른쪽 모터 PWM 값 지정
+# Servo Move Function -----------------------------------------------------------------------
+def servoSet(servo, name, angle, label):
+    '''
+    서보모터에 값을 보내고 label 을 출력합니다. angle 이 None 이면 신호를 끕니다(정지).
+    서보모터가 없거나 오류가 나도 프로그램을 멈추지 않고 원인만 출력하며, 성공하면 True 를 반환합니다.
+    '''
+    if servo is None:
+        print('[서보] %s 는 초기화에 실패해서 사용할 수 없습니다.' % name)
+        return False
+    try:
+        servo.angle = angle
+    except Exception as e:
+        print('[서보 오류] %s %s 실패: %s: %s' % (name, label, type(e).__name__, e))
+        return False
+    if label: print('[서보] %s %s' % (name, label))
+    return True
+
+def servoCancelTimer(name):
+    '''진행 중인 "신호 끊기" 타이머를 취소합니다.'''
+    if servoTimer[name] is not None:
+        servoTimer[name].cancel()
+        servoTimer[name] = None
+
+def servoMoveTo(servo, name, angle, label, release=True):
+    '''angle 로 이동합니다. release 이면 SERVO_HOLD_SEC 뒤 신호를 끊어 그 자리에서 힘을 풉니다.'''
+    servoCancelTimer(name)
+    if not servoSet(servo, name, angle, label):
+        servoSweep[name] = 0
+        return
+    servoAngle[name] = angle
+    if release:
+        servoTimer[name] = threading.Timer(SERVO_HOLD_SEC, servoSet, (servo, name, None, ''))
+        servoTimer[name].daemon = True
+        servoTimer[name].start()
+
+def servoStop(servo, name):
+    '''"계속"을 멈추고 신호를 바로 끊습니다. 이동 키는 바로 다시 쓸 수 있습니다.'''
+    servoSweep[name] = 0
+    servoCancelTimer(name)
+    servoSet(servo, name, None, '정지 (%d도)' % servoAngle[name])
+
+def servoNext(name, direction, step):
+    '''마지막 각도에서 direction(+1 왼쪽 / -1 오른쪽) 으로 step 도 간 각도. 범위 끝에서 자릅니다.'''
+    return max(SERVO_MIN, min(SERVO_MAX, servoAngle[name] + direction * SERVO_LEFT * step))
+
+def servoTurn(servo, name, direction):
+    '''"10도" 키: SERVO_STEP 도 간 뒤 멈춥니다. 범위 끝에서는 더 가지 않습니다.'''
+    servoSweep[name] = 0
+    target = servoNext(name, direction, SERVO_STEP)
+    if target == servoAngle[name]:
+        print('[서보] %s %d도 (범위 끝이라 더 움직이지 않음)' % (name, target))
+        return
+    servoMoveTo(servo, name, target, '%s %d도' % ('왼쪽' if direction > 0 else '오른쪽', target))
+
+def servoKeepTurning(servo, name, direction):
+    '''"계속" 키: 정지 키를 누르거나 끝에 닿을 때까지 direction 쪽으로 움직입니다 (servoSweepStep 이 움직임).'''
+    servoSweep[name] = direction
+    print('[서보] %s %s으로 계속 (정지 키로 멈춤)' % (name, '왼쪽' if direction > 0 else '오른쪽'))
+
+def servoSweepStep(servo, name):
+    '''메인 루프에서 화면 1장마다 부릅니다. "계속" 중이면 SERVO_SWEEP_STEP 만큼 움직이고, 끝에 닿으면 멈춥니다.'''
+    if not servoSweep[name]:
+        return
+    target = servoNext(name, servoSweep[name], SERVO_SWEEP_STEP)
+    if target == servoAngle[name]:
+        servoSweep[name] = 0
+        servoMoveTo(servo, name, target, '%d도 (범위 끝이라 멈춤)' % target)
+        return
+    servoMoveTo(servo, name, target, '', release=False)
 # Mouse Callback Function -------------------------------------------------------------------
 def controlMain(event,x,y,flags,param):
     '''
@@ -328,7 +478,7 @@ def controlMain(event,x,y,flags,param):
     global recordOn, cursorColor
     global mouseCtrlState, oneShot
 
-    mouseX = min(799, max(0, x * 800 // DISPLAY_X))
+    mouseX = min(799, max(0, x * 800 // DISPLAY_X))  # 화면 좌표를 800x480 좌표로 변환
     mouseY = min(479, max(0, y * 480 // DISPLAY_Y))
                                        # 마우스 좌표값 X, Y를 전역변수 mouseX, mouseY에 저장
     if event == cv.EVENT_LBUTTONDOWN:  # 마우스 왼쪽 버튼 이벤트 발생
@@ -364,10 +514,15 @@ def main():
     forwardSpeed = 60                  # 차량 속도 (최고 속도 = 100)
     shotPeriode = 0                    # 촬영 시간 간격 
     timeMemory = cv.getTickCount()     # 시스템 부팅 시 부터 1 mS 간격으로 카운트 업됩니다.
+    powerTime = cv.getTickCount()      # 마지막 전원 상태 확인 시각
     #----------------------------------------------------------------------------------------
     while True:
 
-        frame = cam.capture_array("main")
+        if (cv.getTickCount() - powerTime) / cv.getTickFrequency() > POWER_CHECK_PERIOD:
+            powerTime = cv.getTickCount()
+            checkPower('주행 중')        # 상태가 바뀔 때만 출력
+
+        frame = cam.capture_array("main")  # 카메라로부터 한장의 정지화면 데이터를 가져 옵니다.
         if frame is None or frame.shape != (480, 640, 3):
             raise RuntimeError("카메라에서 640x480 컬러 영상을 받지 못했습니다.")
         viewWin[0:480,0:80] = msgBoxL 
@@ -473,7 +628,7 @@ def main():
         cv.rectangle(viewWin,(80+212,7),(80+426,7+25),BLUE,-1)
         cv.putText(viewWin,saveFile[-14:],(80+212+8,7+18),cv.FONT_HERSHEY_COMPLEX_SMALL,1,CYAN)
         #------------------------------------------------------------------------------------
-        cv.imshow('Out', cv.resize(viewWin, (DISPLAY_X, DISPLAY_Y)))
+        cv.imshow('Out', cv.resize(viewWin, (DISPLAY_X, DISPLAY_Y)))  # 이미지를 LCD에 표시합니다.
         #------------------------------------------------------------------------------------
         keyBoard = cv.waitKey(1) & 0xFF     #print(hex(keyBoard)) # 키보드의 키 값 확인  
         if keyBoard == 0x1B or keyBoard == 0x09 or keyBoard == ord('x') or keyBoard == ord('X'):
@@ -505,6 +660,20 @@ def main():
             MANUAL_LIGHT = not MANUAL_LIGHT
         if keyBoard == ord('v') or keyBoard == ord('V'):     # 속도-시간 가변/고정
             VARIABLE_MODE = not VARIABLE_MODE
+        # 서보모터 조작 (servo1 = 숫자 1~6, servo2 = Q~Y) -------------------------------------
+        # 숫자 키패드(NumLock)는 0xB0~0xB9 로 입력되므로 숫자열 키와 함께 확인합니다.
+        for servo, name, keys in ((servo1, SERVO1_NAME, ('1', '2', '3', '4', '5')),
+                                  (servo2, SERVO2_NAME, ('q', 'w', 'e', 'r', 't'))):
+            servoSweepStep(servo, name)
+            k = [(ord(c), ord(c.upper()), 0x80 + ord(c)) if c.isdigit() else (ord(c), ord(c.upper())) for c in keys]
+            if keyBoard in k[0]: servoKeepTurning(servo, name, 1)    # 왼쪽으로 계속
+            if keyBoard in k[1]: servoKeepTurning(servo, name, -1)   # 오른쪽으로 계속
+            if keyBoard in k[2]: servoTurn(servo, name, 1)           # 왼쪽으로 SERVO_STEP 도
+            if keyBoard in k[3]: servoTurn(servo, name, -1)          # 오른쪽으로 SERVO_STEP 도
+            if keyBoard in k[4]: servoStop(servo, name)              # 정지
+        if keyBoard in (ord('0'), 0xB0):                     # 서보모터 1, 2 모두 정지
+            servoStop(servo1, SERVO1_NAME)
+            servoStop(servo2, SERVO2_NAME)
         # 수동 차량 조작 ----------------------------------------------------------------------
         if keyBoard == 82:                                   # 전진 Arrow Up
             recordOn = False; mouseCtrlState = False
@@ -534,7 +703,60 @@ def main():
             recordOn = False; mouseCtrlState = False; cursorColor = YELLOW
             preKey = ord(' '); mL = 0; mR = 0
             motorRun(mL, mR)
-    #----------------------------------------------------------------------------------------
+
+# Cleanup Function --------------------------------------------------------------------------
+def closePinFactory():
+    '''
+    gpiozero 가 잡고 있는 서보모터 핀(SERVO1_PIN, SERVO2_PIN)을 GPIO.cleanup() 보다 먼저 해제합니다.
+    servo.close() 만으로는 핀이 gpiozero 내부 목록에 남아 있어서, 프로그램이 끝날 때
+    gpiozero 가 GPIO.cleanup(핀번호) 를 다시 호출합니다. 이때 GPIO.cleanup() 으로 핀 번호
+    방식(BCM)이 이미 지워져 있으면 RuntimeError(setmode) 가 납니다.
+    핀을 먼저 해제하고 pin_factory 를 비워 두면 종료 시 gpiozero 가 다시 정리하지 않습니다.
+    '''
+    if Device.pin_factory is not None:
+        Device.pin_factory.close()
+        Device.pin_factory = None
+
+def cleanup():
+    '''
+    프로그램 종료 시 장치를 정리합니다. 정상 종료와 오류 종료 모두 호출됩니다.
+    한 단계가 실패해도 나머지 단계는 계속 진행합니다.
+    서보모터는 GPIO.cleanup() 보다 먼저 해제해야 종료 시 RuntimeError 가 나지 않습니다.
+    '''
+    steps = [('전조등 끄기',       lambda: nx.lamp(0,0,0)),
+             ('왼쪽 모터 정지',    MOTOR_L.stop),
+             ('오른쪽 모터 정지',  MOTOR_R.stop),
+             ('서보모터 1 해제',   lambda: servo1 and servo1.close()),
+             ('서보모터 2 해제',   lambda: servo2 and servo2.close()),
+             ('gpiozero 핀 해제',  closePinFactory),
+             ('GPIO 초기화',       GPIO.cleanup),
+             ('카메라 반납',       cam.close),
+             ('윈도우 닫기',       cv.destroyAllWindows)]
+    for name, step in steps:
+        try:
+            step()
+        except Exception as e:
+            print('[종료 처리 오류] %s 실패: %s: %s' % (name, type(e).__name__, e))
+
+# Error Report Function ---------------------------------------------------------------------
+def reportError(e):
+    '''
+    예기치 않은 오류를 읽기 쉽게 출력합니다.
+    요약(종류·내용·이 파일의 발생 위치)을 먼저 보여주고, 상세 Traceback 은 아래에 붙입니다.
+    '''
+    frames = [f for f in traceback.extract_tb(e.__traceback__) if f.filename.endswith('gi.py')]
+    print('\n' + '=' * 70)
+    print('[오류] 프로그램이 오류로 종료되었습니다.')
+    print('  종류: %s' % type(e).__name__)
+    print('  내용: %s' % e)
+    if frames:
+        f = frames[-1]
+        print('  위치: gi.py %d번 줄 (%s 함수)' % (f.lineno, f.name))
+        print('  코드: %s' % f.line)
+    print('  → 아래 상세 로그와 함께 위 내용을 공유해 주세요.')
+    print('=' * 70)
+    print('[상세 로그]')
+    traceback.print_exception(type(e), e, e.__traceback__)
 
 #============================================================================================
 if __name__ == '__main__':
@@ -592,9 +814,9 @@ if __name__ == '__main__':
                 print('차선 검출 영역 데이터를 읽었습니다:', pathParmeter)
 
     # Mouse Event ---------------------------------------------------------------------------
+    # 화면 해상도로 늘려 표시하고(흰 여백 제거) 저장·제어 좌표는 800x480을 유지한다.
     import re
     import subprocess
-    # VNC 데스크톱 해상도로 표시하고 저장·제어 좌표는 800x480을 유지한다.
     display_info = subprocess.check_output(['xrandr', '--current'], text=True)
     display_match = re.search(r'current\s+(\d+)\s+x\s+(\d+)', display_info)
     if display_match is None:
@@ -602,34 +824,17 @@ if __name__ == '__main__':
     DISPLAY_X, DISPLAY_Y = map(int, display_match.groups())
     if DISPLAY_X <= 0 or DISPLAY_Y <= 0:
         raise RuntimeError('화면 해상도는 양수여야 합니다.')
-    cv.setMouseCallback('Out', controlMain, viewWin)
+    cv.setMouseCallback('Out', controlMain, viewWin)   # 마우스 제어 설정
     #----------------------------------------------------------------------------------------
-    cam = None
     try:
-        cam = Picamera2()
-        # RGB888은 Picamera2에서 OpenCV에 맞는 BGR 바이트 순서로 반환된다.
-        cam.configure(cam.create_video_configuration(
-            main={"size": (640, 480), "format": "RGB888"}))
-        cam.start()
-        main()
-    finally:
-        # 영상 처리 오류나 Ctrl+C로 끝나도 모터 출력을 먼저 끈다.
-        try:
-            motorRun(0, 0)
-        finally:
-            try:
-                MOTOR_L.stop()
-                MOTOR_R.stop()
-            finally:
-                GPIO.cleanup()
-                try:
-                    nx.lamp(0, 0, 0)
-                finally:
-                    try:
-                        if cam is not None:
-                            cam.close()
-                    finally:
-                        cv.destroyAllWindows()
+        main()                                         # 이미지 수집 프로그램 실행
+    except KeyboardInterrupt:
+        print('\n[종료] Ctrl+C 로 프로그램을 중단했습니다.')
+    except Exception as e:
+        reportError(e)                                 # 오류 요약 + 상세 로그 출력
+        cleanup()
+        sys.exit(1)                                    # 오류 종료 시 설정 저장은 건너뜀
+    cleanup()                                          # 모터·서보·GPIO·카메라 정리
     import subprocess
     if DIRECTORY_FLAG:        
         subprocess.call(['sudo', 'chown', 'pi:pi', imageDir])     # 디렉토리를 root 계정에서 pi 계정으로 전환 
