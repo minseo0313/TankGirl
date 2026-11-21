@@ -23,6 +23,8 @@
 # [Left]: 제자리 좌회전
 # [Right]: 제자리 우회전
 # [Down]: 후진
+# O: YOLO 동물·사람 탐지를 켜거나 끕니다 (<프로젝트>/ 안에 탐지 모델이 있을 때).
+#        사람이 보이면 정지(적색 신호와 같음), 사람 없이 노루·멧돼지만 보이면 경적을 울립니다.
 #
 #
 #                                                               
@@ -73,6 +75,7 @@ GRAY    = 128,128,128                 # Gray
 import VL53L0X                        # ToF Ranger Library
 import ts                             # Traffic Signal Library
 import NEOPIXEL as nx                 # Adafruit Neopixel Library
+import yolo_detect as yd              # YOLO 동물·사람 탐지 (aicar/yolo_detect.py)
 #--------------------------------------------------------------------------------------------
 import os                             # File 읽기(Read) 쓰기(Write)와 관련된 라이브러리
 import sys                            # 커맨드 라인 처리를 위한 라이브러리
@@ -471,6 +474,7 @@ def main():
     horn = 0                     # 경적 유지 시간
     blinkCount = 0               # 깜빡이 카운트
     powerTime = time.time()      # 마지막 전원 상태 확인 시각
+    DETECT_ON = detector is not None  # YOLO 탐지 동작 상태 ([O] 키로 전환)
 
     #----------------------------------------------------------------------------------------
     while True:
@@ -502,6 +506,7 @@ def main():
         viewWin[0:480,80:720] = frame[0:480,0:640]     # 480 x 640 VGA
         viewWin[0:480,0:0+80] = msgBoxL                # 왼쪽 메시지 박스
         viewWin[0:480,720:720+80] = msgBoxR            # 오른쪽 메시지 박스
+        if DETECT_ON: detector.submit(frame)           # 탐지 스레드에 최신 화면 전달 (기다리지 않음)
         image = viewWin[WIN_YU:WIN_YD,WIN_XL+80:WIN_XR+80]   # 트랙 이미지
         image = cv.resize(image,(200,66))              # NVIDEA Image 포맷 (X:200, Y:66)
         imageYUV = cv.cvtColor(image, cv.COLOR_BGR2YUV)# RGB 색상을 YUV 색상으로 변환
@@ -568,6 +573,24 @@ def main():
                         BLINK_LEFT = True; BLINK_RIGHT = True
             else: 
                 GPIO.output(LAMP_BRAKE,GPIO.LOW)         # 브레이크 적색 램프 끄기
+        # 동물·사람 탐지 (YOLO) ---------------------------------------------------------------
+        # 사람이 보이면 정지하고 자극(경적)을 내지 않습니다. 사람 없이 노루·멧돼지만 보이면 경적.
+        personSeen = False
+        if DETECT_ON:
+            personSeen, animalSeen, boxes, inferMs = detector.state()
+            if animalSeen and not personSeen:
+                horn = 5                                 # 5 프레임 동안 경적 (보이는 동안 계속)
+            if VIEW_FLAG:
+                for x1, y1, x2, y2, name, conf in boxes:
+                    color = YELLOW if name == 'person' else RED
+                    cv.rectangle(viewWin, (x1+80, y1), (x2+80, y2), color, 2)
+                    cv.putText(viewWin, f'{name} {conf:.2f}', (x1+80, max(y1-5, 12)), cv.FONT_HERSHEY_PLAIN, 1, color)
+                if detector.error:
+                    cv.putText(viewWin, 'YOLO ERROR', (560,20), cv.FONT_HERSHEY_COMPLEX_SMALL, 1, RED)
+                else:
+                    cv.putText(viewWin, f'YOLO {inferMs:4d} mS', (560,20), cv.FONT_HERSHEY_COMPLEX_SMALL, 1, WHITE)
+                if personSeen:
+                    cv.putText(viewWin, 'PERSON STOP', (300,250), cv.FONT_HERSHEY_COMPLEX_SMALL, 2, YELLOW)
         #------------------------------------------------------------------------------------
         if VIEW_FLAG:
             if MODEL_FILE: 
@@ -621,8 +644,8 @@ def main():
         # 모터 PWM 값 표시 --------------------------------------------------------------------
         cv.putText(viewWin, f'{mL:3d}', (15,340),cv.FONT_HERSHEY_COMPLEX_SMALL,1,WHITE)
         cv.putText(viewWin, f'{mR:3d}', (735,340),cv.FONT_HERSHEY_COMPLEX_SMALL,1,WHITE)
-        # 자율 주행 모드에서 Red 신호(0 보다 큰 수)일 때 정지 --------------------------------------
-        if signRedDelay > 0:
+        # 자율 주행 모드에서 Red 신호(0 보다 큰 수)이거나 사람이 보이면 정지 -------------------------
+        if signRedDelay > 0 or personSeen:
             if autoRun or preKey == 82:           # 자율주행 모드일 또는 커서 Up 키
                 mL = 0; mR = 0
         # 왼쪽 모터, 오른쪽 모터 동작 -----------------------------------------------------------
@@ -673,6 +696,12 @@ def main():
                 tof.stop_ranging()                            # 거리 센서 정지
         elif keyBoard == ord('y') or keyBoard == ord('Y'):    # NVIDIA YUV 디스프레이
             YUV = not YUV                                     # RGB <-> YUV 전환
+        elif keyBoard == ord('o') or keyBoard == ord('O'):    # YOLO 탐지 On/Off
+            if detector is None:
+                print('[탐지] 탐지 모델이 없어 켤 수 없습니다.')
+            else:
+                DETECT_ON = not DETECT_ON
+                print('[탐지] %s' % ('켬' if DETECT_ON else '끔'))
         # 수동 차량 조정 ----------------------------------------------------------------------
         elif keyBoard == 82:                                  # 전진 Arrow Up(82)
             autoRun = False 
@@ -709,7 +738,8 @@ def main():
         for servo, name, keys in ((servo1, SERVO1_NAME, ('1', '2', '3', '4', '5')),
                                   (servo2, SERVO2_NAME, ('q', 'w', 'e', 'r', 't'))):
             servoSweepStep(servo, name)
-            k = [(ord(c), ord(c.upper()), 0x80 + ord(c)) if c.isdigit() else (ord(c), ord(c.upper())) for c in keys]
+            # 문자 키는 소문자만: OpenCV 는 방향키를 대문자와 같은 값(←81=Q ↑82=R ↓84=T End87=W)으로 돌려줍니다.
+            k = [(ord(c), 0x80 + ord(c)) if c.isdigit() else (ord(c),) for c in keys]
             if servoKey in k[0]: servoKeepTurning(servo, name, 1)    # 왼쪽으로 계속
             if servoKey in k[1]: servoKeepTurning(servo, name, -1)   # 오른쪽으로 계속
             if servoKey in k[2]: servoTurn(servo, name, 1)           # 왼쪽으로 SERVO_STEP 도
@@ -814,6 +844,19 @@ if __name__ == '__main__':
     else:
         print('\n학습 모델 파일 ', modelFile, ' 이 없습니다.\n')
         modelFile = 'Manual Mode'
+    # YOLO 탐지 모델 (train_all.ipynb 가 만든 zip 을 풀면 <프로젝트>/ 안에 놓임) ----------------
+    detector = None
+    yoloDir = os.path.join(current_directory, imageDir)
+    if yd.hasModels(yoloDir):
+        try:
+            detector = yd.Detector(yoloDir)
+            print('[탐지] YOLO 모델을 읽었습니다:', yoloDir)
+        except (ImportError, OSError, ValueError, RuntimeError) as e:
+            print('[탐지 오류] YOLO 모델을 읽지 못했습니다 → 탐지 없이 주행만 합니다.')
+            print('  원인: %s: %s' % (type(e).__name__, e))
+            print('  확인: pip install ultralytics ncnn, 모델 폴더에 model.ncnn.param·bin 이 있는지')
+    else:
+        print('[탐지] %s 안에 %s, %s 폴더가 없어 탐지 없이 주행만 합니다.' % (yoloDir, yd.PERSON_DIR, yd.ANIMAL_DIR))
     # 트랙 윈도우 파일
     t = './'+imageDir+'/_'+imageDir+'_track.pickle'
     if os.path.exists(t):
