@@ -93,10 +93,11 @@ aicar/              원본 aicar 코드 (수정하지 않고 사용)
     power_check.py  Raspberry Pi 전압 부족 경고 (gi.py, ar.py, servo_test.py, mg90s_test.py 에서 사용)
   dl.py             이미지 편집 · 데이터 분리 · 학습(Pi 단독) · Colab 용 ZIP 생성
   aicarA.ipynb      Colab GPU 학습 노트북
-  ar.py             자율주행 + 서보모터 2개 키 조작
+  ar.py             자율주행 + 서보모터 2개 키 조작 + YOLO 탐지
+  yolo_detect.py    YOLO 동물·사람 탐지 스레드 (ar.py 에서 사용)
   od.py             객체(동물·사람) 탐지
 yolo/               노루·멧돼지·사람 탐지 YOLO 학습·벤치마크 (docs/YOLO.md)
-  train/            Colab 학습 노트북, data.yaml
+  train/            주행 + 탐지 한 번에 학습하는 Colab 노트북(train_all.ipynb), data.yaml
   benchmark/        Pi 추론 시간 측정
   models/           모델 기록 README (모델 파일은 git 제외)
 assets/images/      README·문서용 이미지
@@ -115,6 +116,7 @@ cd aicar
 # 1. 주행 이미지 수집 - wayA/ 폴더에 P0001__+12.png 형식으로 저장
 python3 gi.py wayA
 #    서보1 [1]/[2] 왼쪽·오른쪽 계속  [3]/[4] 왼쪽·오른쪽 10°  [5] 정지  (서보2 는 Q W E R T, [0] 둘 다 정지)
+#    [P] → YOLO 라벨링용 원본 사진을 yolo_raw/<날짜>/ 에 저장
 
 # 2. 데이터 편집 후 학습
 python3 dl.py wayA
@@ -122,8 +124,11 @@ python3 dl.py wayA
 
 # 3. (Colab 학습 시) aicarA.ipynb 에 wayA.zip 업로드 → T4 GPU → 모두 실행
 #    → _wayA_model_check.pt 를 Pi 의 ~/Downloads 또는 aicar/wayA/ 에 복사
+#    주행 + 탐지를 함께 학습하려면 yolo/train/train_all.ipynb (docs/YOLO.md)
+#    → wayA_models.zip 을 aicar/ 에서 풀기 (wayA/ 에 .pt 와 YOLO 모델이 함께 놓임)
 
-# 4. 자율주행 - [G] 시작, [D] 거리센서, [Space] 정지, [X] 종료
+# 4. 자율주행 - [G] 시작, [D] 거리센서, [O] YOLO 탐지 켜기·끄기, [Space] 정지, [X] 종료
+#    wayA/ 에 YOLO 모델이 있으면 탐지도 함께: 사람 → 정지, 노루·멧돼지 → 경적
 python3 ar.py wayA
 
 # 5. 객체 탐지
