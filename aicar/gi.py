@@ -162,6 +162,10 @@
 #           이동 후 SERVO_HOLD_SEC 초가 지나면 신호를 끊어 그 자리에서 힘을 풉니다.
 #           [0] 두 서보모터 모두 정지
 #
+#     (20) [P]:
+#           YOLO 탐지 학습용 원본 카메라 사진(640x480)을 yolo_raw/<날짜>/ 에 저장합니다.
+#           노루·멧돼지 모형이나 사람이 화면에 보일 때 누릅니다. 라벨링 후 yolo/train/train_all.ipynb 로 학습합니다.
+#
 # F. 프로그램 종료시 pickle 에 저장되는 데이터
 #
 #     gi.py 에서 pickle 로 저장하는 데이터는 스크린 영역 4 개, 전조등 상태 2 개,
@@ -216,6 +220,7 @@ recTimeList = [recUnitTime*1,recUnitTime*2,recUnitTime*3,recUnitTime*4,
                recUnitTime*9,recUnitTime*10,recUnitTime*11] # 가변 차량속도/촬영시간 모드에서 녹화 구간별 녹화 시간 간격
 # Library Import ============================================================================
 import os                   # 파일, 디렉토리 존재 유무 확인, 디렉토리 생성 라이브러리
+import time                 # YOLO 사진 파일 이름(날짜·시각)
 import sys                  # 커맨드 라인 인수(이미지 저장 디렉토리, 레코딩 시작번호)처리 라이브러리 
 import numpy as np          # 이미지 배열 생성(OpenCV 에서 사용) 라이브러리
 import cv2 as cv            # 영상처리(OpenCV) 라이브러리 
@@ -459,6 +464,19 @@ def servoSweepStep(servo, name):
         servoMoveTo(servo, name, target, '%d도 (범위 끝이라 멈춤)' % target)
         return
     servoMoveTo(servo, name, target, '', release=False)
+# YOLO Photo Function ----------------------------------------------------------------------
+YOLO_RAW_DIR = 'yolo_raw'             # YOLO 라벨링용 원본 사진 저장 폴더 (aicar/yolo_raw/<날짜>/)
+
+def saveYoloShot(frame):
+    '''[P] 키: 화면 표시가 그려지기 전의 카메라 원본(640x480)을 YOLO 라벨링용으로 저장합니다.'''
+    d = os.path.join(YOLO_RAW_DIR, time.strftime('%Y%m%d'))
+    os.makedirs(d, exist_ok=True)
+    t = time.time()
+    path = os.path.join(d, time.strftime('%H%M%S', time.localtime(t)) + '_%03d.jpg' % (int(t * 1000) % 1000))
+    if cv.imwrite(path, frame):
+        print('[YOLO 사진] 저장: %s' % path)
+    else:
+        print('[YOLO 사진 오류] 저장 실패: %s (저장 공간·폴더 권한 확인)' % path)
 # Mouse Callback Function -------------------------------------------------------------------
 def controlMain(event,x,y,flags,param):
     '''
@@ -652,6 +670,8 @@ def main():
                 WIN_XR = WIN_XR_ORG                          # 제어 윈도우 오른쪽 X 값
                 WIN_YU = WIN_YU_ORG                          # 제어 윈도우 위쪽 Y 값
                 WIN_YD = WIN_YD_ORG                          # 제어 윈도우 아래쪽 Y값
+        if keyBoard == ord('p'):                              # YOLO 라벨링용 원본 사진 저장 (대문자 P 는 Home 키와 같은 값 80)
+            saveYoloShot(frame)
         if keyBoard == ord('c') or keyBoard == ord('C'):     # 클리어 View/메뉴 View
             MENU_VIEW = not MENU_VIEW
         if keyBoard == ord('a') or keyBoard == ord('A'):     # 전조등 자동/수동 점등 
@@ -665,7 +685,8 @@ def main():
         for servo, name, keys in ((servo1, SERVO1_NAME, ('1', '2', '3', '4', '5')),
                                   (servo2, SERVO2_NAME, ('q', 'w', 'e', 'r', 't'))):
             servoSweepStep(servo, name)
-            k = [(ord(c), ord(c.upper()), 0x80 + ord(c)) if c.isdigit() else (ord(c), ord(c.upper())) for c in keys]
+            # 문자 키는 소문자만: OpenCV 는 방향키를 대문자와 같은 값(←81=Q ↑82=R ↓84=T End87=W)으로 돌려줍니다.
+            k = [(ord(c), 0x80 + ord(c)) if c.isdigit() else (ord(c),) for c in keys]
             if keyBoard in k[0]: servoKeepTurning(servo, name, 1)    # 왼쪽으로 계속
             if keyBoard in k[1]: servoKeepTurning(servo, name, -1)   # 오른쪽으로 계속
             if keyBoard in k[2]: servoTurn(servo, name, 1)           # 왼쪽으로 SERVO_STEP 도
