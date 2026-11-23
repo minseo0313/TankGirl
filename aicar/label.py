@@ -3,7 +3,9 @@
 # <label.py>  객체 탐지(YOLO) 라벨링 도구 - 라즈베리파이 안에서 (설치할 것 없음, OpenCV 창)
 #
 # $ cd aicar && python3 label.py            yolo_raw/ 사진을 한 장씩 띄워 상자를 그림 (sudo 필요 없음)
+# $ python3 label.py yolo_raw/20261123      폴더를 지정하면 그 폴더(와 그 아래) 사진만
 # $ python3 label.py --zip                  라벨링한 사진을 train/val/test 7:2:1 로 나눠 yolo_dataset.zip 생성
+# $ python3 label.py yolo_raw/20261123 --zip   지정한 폴더의 사진만 묶기
 # $ python3 label.py --test                 자체 점검 (화면 없이)
 #
 # 사진: gi.py 2번 모드(객체 탐지 이미지 수집)가 찍은 yolo_raw/<날짜>/*.jpg
@@ -13,6 +15,8 @@
 #
 # 키 (카메라 창처럼 창을 한 번 클릭한 뒤 누름)
 #   마우스로 끌기  상자 그리기 (지금 고른 클래스로)
+#   또는 클릭 2번  한 모서리 클릭 → 반대 모서리 클릭 (끌기가 안 되는 VNC, 터치패드용). 오른쪽 클릭 = 취소
+#   --debug        마우스 신호를 터미널에 출력 (상자가 안 그려질 때 원인 확인)
 #   [0] [1] [2]    클래스 고르기: 0 person(사람)  1 roe_deer(노루)  2 wild_boar(멧돼지)
 #   [Z]            마지막 상자 지우기         [C] 이 사진 상자 모두 지우기
 #   [Space] [N]    저장하고 다음 사진         [B] 저장하고 이전 사진
@@ -33,7 +37,6 @@ from pathlib import Path
 CLASSES = ('person', 'roe_deer', 'wild_boar')
 COLORS = ((0, 215, 255), (60, 220, 60), (60, 60, 255))     # BGR: 사람 노랑, 노루 초록, 멧돼지 빨강
 RAW_DIR = Path('yolo_raw')
-DELETED_DIR = Path('yolo_raw_deleted')
 ZIP_FILE = Path('yolo_dataset.zip')
 SPLIT = (('train', 0.7), ('val', 0.2), ('test', 0.1))     # 학습 노트북이 images/<split>, labels/<split> 로 읽음
 SPLIT_SEED = 0                  # 같은 사진이면 몇 번 묶어도 같은 나눔 (평가 결과를 비교할 수 있게)
@@ -129,12 +132,16 @@ def makeZip(raw=RAW_DIR, out=ZIP_FILE):
 
 # 라벨링 창 -----------------------------------------------------------------------------------
 class Labeler:
-    def __init__(self, images):
+    def __init__(self, images, raw=RAW_DIR, debug=False):
         import cv2 as cv
+        self.raw = Path(raw)
         self.cv = cv
         self.images = images
         self.cls = 1                       # 처음엔 노루
         self.boxes, self.drag, self.msg = [], None, ''
+        self.anchor = None                 # 클릭 2번 그리기: 첫 클릭한 모서리
+        self.pointer = (0, 0)              # 마우스 위치 (첫 클릭 뒤 미리보기 상자)
+        self.debug = debug
         done = [labelPath(p).exists() for p in images]
         self.i = done.index(False) if False in done else 0           # 아직 안 한 사진부터
         self.load()
@@ -157,27 +164,45 @@ class Labeler:
         try:
             writeLabels(self.images[self.i], self.boxes, self.w, self.h)
         except OSError as e:
-            print('[라벨 오류] 저장 실패: %s\n  사진 폴더가 root 소유이면: sudo chown -R $USER:$USER %s' % (e, RAW_DIR))
+            print('[라벨 오류] 저장 실패: %s\n  사진 폴더가 root 소유이면: sudo chown -R $USER:$USER %s' % (e, self.raw))
             return False
         return True
 
     def go(self, d):
+        self.anchor = None
         self.save()
         self.i = max(0, min(len(self.images) - 1, self.i + d))
         self.load()
 
+    def addBox(self, x1, y1, x2, y2):
+        if abs(x2 - x1) >= MIN_BOX_PX and abs(y2 - y1) >= MIN_BOX_PX:
+            self.boxes.append((self.cls, min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)))
+            return True
+        return False
+
     def mouse(self, event, x, y, flags, param):
+        '''끌어서 그리기와 클릭 2번 그리기를 모두 받습니다 (VNC 나 터치패드는 끌기 신호가 빠질 수 있음).'''
         cv = self.cv
+        if self.debug and event != cv.EVENT_MOUSEMOVE:
+            print('[마우스] event=%d x=%d y=%d' % (event, x, y))
         x, y = max(0, min(self.w - 1, x)), max(0, min(self.h - 1, y))
+        self.pointer = (x, y)
         if event == cv.EVENT_LBUTTONDOWN:
             self.drag = (x, y, x, y)
         elif event == cv.EVENT_MOUSEMOVE and self.drag:
             self.drag = (self.drag[0], self.drag[1], x, y)
-        elif event == cv.EVENT_LBUTTONUP and self.drag:
-            x1, y1 = self.drag[:2]
+        elif event == cv.EVENT_LBUTTONUP:
+            x1, y1 = self.drag[:2] if self.drag else (x, y)
             self.drag = None
-            if abs(x - x1) >= MIN_BOX_PX and abs(y - y1) >= MIN_BOX_PX:
-                self.boxes.append((self.cls, min(x1, x), min(y1, y), max(x1, x), max(y1, y)))
+            if self.addBox(x1, y1, x, y):              # 끌어서 그림
+                self.anchor = None
+            elif self.anchor is None:                  # 그냥 클릭 → 첫 모서리
+                self.anchor = (x, y)
+            else:                                      # 두 번째 클릭 → 상자
+                if self.addBox(self.anchor[0], self.anchor[1], x, y):
+                    self.anchor = None
+        elif event == cv.EVENT_RBUTTONDOWN:            # 첫 모서리 취소
+            self.anchor, self.drag = None, None
 
     def draw(self):
         cv = self.cv
@@ -188,6 +213,9 @@ class Labeler:
         if self.drag:
             x1, y1, x2, y2 = self.drag
             cv.rectangle(view, (x1, y1), (x2, y2), COLORS[self.cls], 1)
+        elif self.anchor:                              # 첫 모서리를 찍은 뒤: 점과 미리보기 상자
+            cv.circle(view, self.anchor, 4, COLORS[self.cls], -1)
+            cv.rectangle(view, self.anchor, self.pointer, COLORS[self.cls], 1)
         # 안내 줄 (OpenCV 는 한글을 못 그려 영어로)
         state = 'EMPTY (background)' if self.hasFile and not self.boxes else ('%d boxes' % len(self.boxes))
         top = '%d/%d  %s  [%s]  %s' % (self.i + 1, len(self.images), self.images[self.i].name, state, self.msg)
@@ -204,7 +232,7 @@ class Labeler:
 
     def trash(self):
         img = self.images[self.i]
-        dst = DELETED_DIR / img.parent.name
+        dst = self.raw.parent / (self.raw.name + '_deleted') / img.parent.name   # 예: yolo_raw_deleted/<날짜>/
         dst.mkdir(parents=True, exist_ok=True)
         for p in (img, labelPath(img)):
             if p.exists():
@@ -224,14 +252,21 @@ class Labeler:
         while True:
             cv.imshow('Label', self.draw())
             k = cv.waitKey(20) & 0xFF
+            if self.debug and k != 255:
+                print('[키] %d (%r)' % (k, chr(k) if 32 <= k < 127 else '?'))
             self.msg = '' if k != 255 else self.msg
             if k in (ord('x'), ord('X'), 27):
                 self.save()
                 break
             if k in (ord('0'), ord('1'), ord('2')):
                 self.cls = k - ord('0')
-            elif k in (ord('z'), ord('Z')) and self.boxes:
-                self.boxes.pop()
+            elif k in (0xB0, 0xB1, 0xB2):              # 숫자 키패드(NumLock 켜짐)는 0xB0~ 로 들어옴 (gi.py 와 같음)
+                self.cls = k - 0xB0
+            elif k in (ord('z'), ord('Z')) and (self.boxes or self.anchor):
+                if self.anchor:
+                    self.anchor = None                 # 첫 모서리만 찍은 상태면 그것부터 취소
+                else:
+                    self.boxes.pop()
             elif k in (ord('c'), ord('C')):
                 self.boxes = []
             elif k in (ord(' '), ord('n'), ord('N')):
@@ -296,19 +331,26 @@ def selfTest():
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='객체 탐지(YOLO) 라벨링 도구')
+    ap.add_argument('folder', nargs='?', default=str(RAW_DIR),
+                    help='라벨링할 사진 폴더 (그 아래 .jpg 를 모두 찾음, 기본: %s)' % RAW_DIR)
     ap.add_argument('--zip', action='store_true', help='라벨링한 사진을 yolo_dataset.zip 으로 묶기')
     ap.add_argument('--test', action='store_true', help='자체 점검')
+    ap.add_argument('--debug', action='store_true', help='마우스 신호를 터미널에 출력')
     args = ap.parse_args()
     if args.test:
         selfTest()
         sys.exit(0)
-    images = findImages()
+    raw = Path(args.folder)
+    if not raw.is_dir():
+        print('폴더가 없습니다: %s (지금 위치: %s)' % (raw, Path.cwd()))
+        sys.exit(1)
+    images = findImages(raw)
     if not images:
-        print('%s/ 에 사진이 없습니다. gi.py 를 2번(객체 탐지 이미지 수집) 모드로 실행해 찍어 주세요.' % RAW_DIR)
+        print('%s/ 에 .jpg 사진이 없습니다. gi.py 를 2번(객체 탐지 이미지 수집) 모드로 실행해 찍어 주세요.' % raw)
         sys.exit(1)
     if args.zip:
         try:
-            n = makeZip()
+            n = makeZip(raw)
         except ValueError as e:
             print('[묶기 실패] %s' % e)
             sys.exit(1)
@@ -316,7 +358,7 @@ if __name__ == '__main__':
         printSummary(images)
         print('→ Colab 에서 yolo/train/train_detect.ipynb 를 열고 이 zip 을 올려 학습합니다.')
         sys.exit(0)
-    print('라벨링 시작: 사진 %d장 (아직 안 한 사진부터). 창을 한 번 클릭한 뒤 키를 누르세요.' % len(images))
-    Labeler(images).run()
-    printSummary(findImages())
-    print('다 했으면: python3 label.py --zip')
+    print('라벨링 시작: %s/ 사진 %d장 (아직 안 한 사진부터). 창을 한 번 클릭한 뒤 키를 누르세요.' % (raw, len(images)))
+    Labeler(images, raw, args.debug).run()
+    printSummary(findImages(raw))
+    print('다 했으면: python3 label.py %s--zip' % ('' if raw == RAW_DIR else '%s ' % raw))

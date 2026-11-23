@@ -45,7 +45,8 @@ sudo python3 gi.py        # 시작하면 "2. 객체 탐지 이미지 수집" 을
 
 ```
 cd ~/aicar
-python3 label.py          # sudo 없이. 아직 안 한 사진부터 한 장씩 뜸 (껐다 켜면 이어서)
+python3 label.py                     # sudo 없이. yolo_raw/ 아래 사진을, 아직 안 한 것부터 한 장씩 (껐다 켜면 이어서)
+python3 label.py yolo_raw/20261123   # 폴더를 지정하면 그 폴더 사진만 (다른 곳의 사진도 가능)
 ```
 
 | 키 | 하는 일 |
@@ -66,7 +67,8 @@ python3 label.py          # sudo 없이. 아직 안 한 사진부터 한 장씩 
 다 하면 학습용 zip 으로 묶습니다. train/val/test 를 7:2:1 로 나누고(같은 사진이면 늘 같은 나눔), 학습 노트북이 읽는 구조로 만듭니다.
 
 ```
-python3 label.py --zip    # → aicar/yolo_dataset.zip
+python3 label.py --zip                       # yolo_raw/ 전체 → aicar/yolo_dataset.zip
+python3 label.py yolo_raw/20261123 --zip     # 지정한 폴더만 묶기
 ```
 
 Roboflow 등 다른 도구를 써도 됩니다. 클래스 순서는 `0 person`, `1 roe_deer`, `2 wild_boar` 이고, YOLOv8 형식으로 내보낸 zip 을 그대로 쓸 수 있습니다.
