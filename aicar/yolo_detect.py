@@ -43,6 +43,8 @@ class Detector:
             raise ValueError('모델 클래스가 예상과 다릅니다. person=%s animal=%s'
                              % (self.person.names, self.animal.names))
         self.lock = threading.Lock()
+        self.conf = DETECT_CONF            # ar.py 가 설정(settings.py)이 바뀌면 다시 넣습니다
+        self.hold = DETECT_HOLD_SEC
         self.frame = None                  # 다음에 탐지할 화면 (주행 루프가 계속 덮어씀)
         self.boxes = []                    # [(x1, y1, x2, y2, 이름, 신뢰도), ...] 카메라 640x480 좌표
         self.lastPerson = 0.0              # 마지막으로 사람을 본 시각
@@ -59,11 +61,11 @@ class Detector:
     def state(self):
         '''(사람 있음, 동물 있음, 박스 목록, 탐지 시간 mS) 를 돌려줍니다.'''
         with self.lock:
-            person, animal = detectState(time.time(), self.lastPerson, self.lastAnimal)
+            person, animal = detectState(time.time(), self.lastPerson, self.lastAnimal, self.hold)
             return person, animal, self.boxes, self.inferMs
 
     def _predict(self, model, frame, ids, imgsz):
-        r = model.predict(source=frame, classes=ids, conf=DETECT_CONF, imgsz=imgsz,
+        r = model.predict(source=frame, classes=ids, conf=self.conf, imgsz=imgsz,
                           device='cpu', verbose=False)[0]
         return [(int(x1), int(y1), int(x2), int(y2), str(model.names[int(c)]), float(p))
                 for (x1, y1, x2, y2), c, p in zip(r.boxes.xyxy.tolist(), r.boxes.cls.tolist(), r.boxes.conf.tolist())]

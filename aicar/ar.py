@@ -76,6 +76,12 @@ import VL53L0X                        # ToF Ranger Library
 import ts                             # Traffic Signal Library
 import NEOPIXEL as nx                 # Adafruit Neopixel Library
 import yolo_detect as yd              # YOLO 동물·사람 탐지 (aicar/yolo_detect.py)
+import settings as cfg                # 실험 설정값 (settings_gui.py 로 실행 중에 바꿈)
+import aim                            # 서보 조준 (IF-08)
+import stimulus as stim               # 기피 자극 (IF-09)
+import event_log                      # 이벤트 기록 (IF-10)
+import event_server                   # 원격 조회 API (IF-11)
+import control                        # 설정 GUI 의 실험 명령과 상태 (IF-12)
 #--------------------------------------------------------------------------------------------
 import os                             # File 읽기(Read) 쓰기(Write)와 관련된 라이브러리
 import sys                            # 커맨드 라인 처리를 위한 라이브러리
@@ -229,6 +235,92 @@ servoSweep = {SERVO1_NAME: 0, SERVO2_NAME: 0}          # "계속" 방향 (+1 왼
 print('[서보] 소프트웨어 PWM 사용 중: 서보가 조금 떨릴 수 있습니다 (pigpio 사용 시 개선).')
 checkPower('시작')
 POWER_CHECK_PERIOD = 1.0  # 주행 중 전원 상태 확인 간격 (초)
+#--------------------------------------------------------------------------------------------
+# 설정, 조준, 자극, 기록 (settings_gui.py 로 실행 중에 바꾸고 시험합니다) -------------------------
+SETTINGS = cfg.load()                 # 값은 applySettings() 로 아래 상수와 탐지 모듈에 들어갑니다
+settingsWatcher = cfg.Watcher()       # runtime/settings.json 이 바뀌면 메인 루프에서 다시 읽음
+commands = control.CommandReader()    # 설정 GUI 의 실험 명령
+STATUS = {}                           # 설정 GUI 와 조회 서버(/api/status)에 보여 줄 상태
+STATUS_PERIOD = 1.0                   # 상태 파일 쓰는 간격 (초)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+eventServer = None                    # 원격 조회 서버 (EVENT_SERVER_ON 일 때 __main__ 에서 켬)
+# 서보 키 (숫자열, 숫자 키패드, 소문자). 누르면 자동 조준을 MANUAL_OVERRIDE_SEC 동안 쉼 (AIM-06)
+SERVO_MANUAL_KEYS = {ord(c) for c in '123450qwert'} | {0x80 + ord(c) for c in '123450'}
+
+def aimMove(tilt, pan):
+    '''서보 1 = 위아래(tilt), 서보 2 = 좌우(pan). SERVO_HOLD_SEC 뒤 힘을 풉니다.
+    servoAngle 이 같아도 보냅니다: 시작 직후에는 실제 위치를 모르는데 servoAngle 은 SERVO_CENTER 로 되어 있으므로.'''
+    for servo, name, angle in ((servo1, SERVO1_NAME, tilt), (servo2, SERVO2_NAME, pan)):
+        servoSweep[name] = 0
+        servoMoveTo(servo, name, angle, '')
+
+def aimHold():
+    '''두 서보를 그 자리에서 힘 풀기 (사람이 보일 때 프레임마다, 실험 [힘 풀기]).'''
+    for servo, name in ((servo1, SERVO1_NAME), (servo2, SERVO2_NAME)):
+        servoSweep[name] = 0
+        servoCancelTimer(name)
+        if servo is not None:            # 없는 서보는 조용히 건너뜀 (프레임마다 오류 출력 방지)
+            servoSet(servo, name, None, '')
+
+aimer = aim.Aimer(lambda: (servoAngle[SERVO1_NAME], servoAngle[SERVO2_NAME]), aimMove, aimHold)
+stimulus = stim.Stimulus(BASE_DIR)
+eventLog = event_log.EventLog(BASE_DIR)
+
+def applySettings(s):
+    '''설정값을 이 파일의 상수와 탐지 모듈에 넣습니다. 시작할 때와 settings.json 이 바뀔 때 부릅니다.'''
+    global SETTINGS, RUN_SPEED, ANGLE_GAIN, HORN_DISTANCE, STOP_DISTANCE, SERVO_CENTER, SERVO_LEFT, SERVO_HOLD_SEC
+    global SERVO_STEP, SERVO_SWEEP_STEP
+    SETTINGS = s
+    RUN_SPEED, ANGLE_GAIN = s['RUN_SPEED'], s['ANGLE_GAIN']
+    HORN_DISTANCE, STOP_DISTANCE = s['HORN_DISTANCE'], s['STOP_DISTANCE']
+    SERVO_CENTER, SERVO_LEFT, SERVO_HOLD_SEC = s['SERVO_CENTER'], s['SERVO_LEFT'], s['SERVO_HOLD_SEC']
+    SERVO_STEP, SERVO_SWEEP_STEP = s['SERVO_STEP'], s['SERVO_SWEEP_STEP']   # 키보드 서보 속도
+    if detector is not None:
+        detector.conf, detector.hold = s['DETECT_CONF'], s['DETECT_HOLD_SEC']
+
+def handleCommand(c, frame, personSeen, detectOk):
+    '''설정 GUI 실험 명령을 실행하고 결과 문장을 돌려줍니다.'''
+    name, a, s = c['cmd'], c.get('args') or {}, SETTINGS
+    moves = ('aim_center', 'aim_angle', 'aim_point', 'stim_start')
+    try:
+        if name in moves and not detectOk and not s['ALLOW_WITHOUT_DETECT']:
+            return '탐지가 꺼져 있어 사람을 확인할 수 없음 → 거부 (SAFE-08, 설정 안전 탭에서 허용 가능)'
+        if name in ('aim_center', 'aim_angle', 'aim_point') and personSeen:
+            return '사람이 보여서 서보를 움직이지 않음 (SAFE-06)'
+        if name.startswith('aim_'):
+            aimer.pause(s['MANUAL_OVERRIDE_SEC'])       # 시험하는 동안 자동 조준이 덮어쓰지 않게
+        if name == 'aim_center':
+            return '가운데로 → 위아래 %d, 좌우 %d' % aimer.aimCenter(s)
+        if name == 'aim_angle':
+            return '각도 → 위아래 %d, 좌우 %d' % aimer.moveTo(int(a['tilt']), int(a['pan']), s)
+        if name == 'aim_point':
+            x, y = int(a['x']), int(a['y'])
+            t = aimer.aimAt((x - 20, y - 20, x + 20, y + 20), s, force=True)
+            return '(%d, %d) 조준 → 위아래 %d, 좌우 %d' % (x, y, t[0], t[1])
+        if name == 'aim_hold':
+            aimer.aimHold()
+            return '힘 풀기'
+        if name == 'stim_start':
+            if personSeen:
+                return '사람이 보여서 자극하지 않음 (SAFE-06)'
+            ok = stimulus.start(a['kind'], s['STIMULUS_SEC'], s)
+            return '%s %s' % (a['kind'], '시작' if ok else '실패 (터미널 확인)')
+        if name == 'stim_stop':
+            stimulus.stop()
+            return '자극 정지'
+        if name == 'log_test':
+            rec = eventLog.write({'species': 'test', 'result': a['result'], 'zone': None}, photo=frame)
+            return '기록 %s' % rec['id'] if rec else '기록 실패 (터미널 확인)'
+    except (KeyError, TypeError, ValueError, OverflowError) as e:
+        return '명령 오류: %s' % e
+    return '모르는 명령'
+
+def publicStatus():
+    '''조회 서버(/api/status)용 상태. 내부 오류 문장은 빼고, 메인 루프가 고치는 중인 dict 대신 복사본.'''
+    s = dict(STATUS)
+    s['detect_error'] = bool(s.get('detect_error'))
+    s.pop('last_command', None)
+    return s
 #--------------------------------------------------------------------------------------------
 viewWin = np.zeros((480,800,3),np.uint8)  # 표시되는 윈도우 가로, 세로, 컬러층, 8비트
 msgBoxL = cv.imread('./_IMAGE/armL.png',cv.IMREAD_COLOR)
@@ -417,6 +509,8 @@ def cleanup():
              ('오른쪽 모터 정지',  MOTOR_R.stop),
              ('서보모터 1 해제',   lambda: servo1 and servo1.close()),
              ('서보모터 2 해제',   lambda: servo2 and servo2.close()),
+             ('자극 끄기',         stimulus.close),
+             ('조회 서버 끄기',    lambda: eventServer and eventServer.shutdown()),
              ('gpiozero 핀 해제',  closePinFactory),
              ('GPIO 초기화',       GPIO.cleanup),
              ('카메라 반납',       camera.close),
@@ -475,6 +569,8 @@ def main():
     blinkCount = 0               # 깜빡이 카운트
     powerTime = time.time()      # 마지막 전원 상태 확인 시각
     DETECT_ON = detector is not None  # YOLO 탐지 동작 상태 ([O] 키로 전환)
+    statusTime = 0.0             # 마지막으로 상태 파일을 쓴 시각
+    lastCommand = ''             # 마지막 실험 명령 결과 (설정 GUI 에 표시)
 
     #----------------------------------------------------------------------------------------
     while True:
@@ -482,6 +578,10 @@ def main():
         if startCycle - powerTime >= POWER_CHECK_PERIOD:
             powerTime = startCycle
             checkPower('주행 중')                       # 상태가 바뀔 때만 출력
+        newSettings = settingsWatcher.poll()           # 설정 GUI 에서 저장하면 바로 반영
+        if newSettings:
+            applySettings(newSettings)
+            print('[설정] 바뀐 값을 반영했습니다')
         if GPIO.input(LIGHT_SENSOR): CDS = 'NIGHT'     # 빛 감지 센서 
         else: CDS = 'DAY'
         if lightMode == 'AUTO' and CDS == 'NIGHT': nx.lamp(255,255,255)  # 전조등 자동 On
@@ -576,6 +676,8 @@ def main():
         # 동물·사람 탐지 (YOLO) ---------------------------------------------------------------
         # 사람이 보이면 정지하고 자극(경적)을 내지 않습니다. 사람 없이 노루·멧돼지만 보이면 경적.
         personSeen = False
+        animalSeen = False
+        boxes = []
         if DETECT_ON:
             personSeen, animalSeen, boxes, inferMs = detector.state()
             if animalSeen and not personSeen:
@@ -591,6 +693,23 @@ def main():
                     cv.putText(viewWin, f'YOLO {inferMs:4d} mS', (560,20), cv.FONT_HERSHEY_COMPLEX_SMALL, 1, WHITE)
                 if personSeen:
                     cv.putText(viewWin, 'PERSON STOP', (300,250), cv.FONT_HERSHEY_COMPLEX_SMALL, 2, YELLOW)
+        # 사람이 보이면 자극 끄고 서보 멈춤 (SAFE-06 일부). 멈춰 있을 때만 동물 쪽 자동 조준 (AIM-02) ----
+        # 탐지가 꺼졌거나 오류로 멈추면 사람을 확인할 수 없으므로 자극을 끔 (SAFE-08 일부)
+        detectOk = DETECT_ON and detector is not None and detector.error is None
+        if not detectOk and not SETTINGS['ALLOW_WITHOUT_DETECT']:
+            stimulus.stop()
+        if personSeen:
+            stimulus.stop()
+            aimer.aimHold()
+        elif SETTINGS['AIM_AUTO'] and animalSeen and not autoRun and mL == 0 and mR == 0:
+            target = aim.largestBox([b for b in boxes if b[4] in yd.ANIMAL_NAMES])
+            if target is not None:
+                aimer.aimAt(target, SETTINGS)
+        # 설정 GUI 실험 명령 -------------------------------------------------------------------
+        c = commands.poll()
+        if c:
+            lastCommand = '%s → %s' % (c['cmd'], handleCommand(c, frame, personSeen, detectOk))
+            print('[실험]', lastCommand)
         #------------------------------------------------------------------------------------
         if VIEW_FLAG:
             if MODEL_FILE: 
@@ -731,10 +850,14 @@ def main():
                 preKey = ord(' '); mL = 0; mR = 0; GPIO.output(MUSIC,GPIO.LOW)
         elif keyBoard == ord(' ') or keyBoard == 87:          # [Spacd] [End]
             autoRun = False; preKey = ord(' '); mL = 0; mR = 0; GPIO.output(MUSIC,GPIO.LOW)
+            stimulus.stop(); horn = 0                         # 수동 정지는 자극, 경적도 끔 (SAFE-09 일부)
             
         # 서보모터 조작 (servo1 = 숫자 1~5, servo2 = Q~T) -------------------------------------
         # 숫자 키패드(NumLock)는 0xB0~0xB9 로 입력되므로 숫자열 키와 함께 확인합니다.
         servoKey = keyBoard & 0xFF                # ar.py 는 키 값을 거르지 않으므로 하위 8비트만 비교
+        if personSeen and servoKey in SERVO_MANUAL_KEYS:  # 사람 보호가 수동 서보 조작보다 먼저 (우선순위 3위 > 4위)
+            print('[서보] 사람이 보여서 움직이지 않습니다 (SAFE-06)')
+            servoKey = -1
         for servo, name, keys in ((servo1, SERVO1_NAME, ('1', '2', '3', '4', '5')),
                                   (servo2, SERVO2_NAME, ('q', 'w', 'e', 'r', 't'))):
             servoSweepStep(servo, name)
@@ -748,6 +871,22 @@ def main():
         if servoKey in (ord('0'), 0xB0):                     # 서보모터 1, 2 모두 정지
             servoStop(servo1, SERVO1_NAME)
             servoStop(servo2, SERVO2_NAME)
+        if servoKey in SERVO_MANUAL_KEYS:                     # 수동 조작이 자동 조준보다 먼저 (AIM-06)
+            aimer.pause(SETTINGS['MANUAL_OVERRIDE_SEC'])
+        # 설정 GUI, 조회 서버에 보여 줄 상태 ------------------------------------------------------
+        if startCycle - statusTime >= STATUS_PERIOD:
+            statusTime = startCycle
+            STATUS.update(state='자율주행' if autoRun else ('수동 주행' if (mL or mR) else '정지'),
+                          detect_on=DETECT_ON, person=personSeen, animal=animalSeen,
+                          detect_error=str(detector.error) if detector is not None and detector.error else None,
+                          tilt=servoAngle[SERVO1_NAME], pan=servoAngle[SERVO2_NAME], aim_auto=SETTINGS['AIM_AUTO'],
+                          stimulus=stimulus.kind, last_command=lastCommand, detect_ok=detectOk,
+                          allow_without_detect=SETTINGS['ALLOW_WITHOUT_DETECT'],
+                          server_port=SETTINGS['EVENT_SERVER_PORT'] if eventServer else None)
+            try:
+                control.writeStatus(STATUS)
+            except OSError as e:
+                print('[상태 오류] runtime/status.json 을 쓰지 못했습니다: %s' % e)
         endCycle = time.time()                                # 프레임 종료 시각
         timeCycle = int((endCycle - startCycle)*1000)         # 프레임 소요 시간
     #----------------------------------------------------------------------------------------
@@ -857,6 +996,14 @@ if __name__ == '__main__':
             print('  확인: pip install ultralytics ncnn, 모델 폴더에 model.ncnn.param·bin 이 있는지')
     else:
         print('[탐지] %s 안에 %s, %s 폴더가 없어 탐지 없이 주행만 합니다.' % (yoloDir, yd.PERSON_DIR, yd.ANIMAL_DIR))
+    # 실험 설정값 적용, 원격 조회 서버 ------------------------------------------------------------
+    applySettings(SETTINGS)
+    print('[설정] %s 를 읽었습니다 (settings_gui.py 로 바꾸면 바로 반영)' % cfg.SETTINGS_FILE)
+    if SETTINGS['EVENT_SERVER_ON']:
+        try:
+            eventServer = event_server.start(eventLog, SETTINGS['EVENT_SERVER_PORT'], publicStatus)
+        except OSError as e:
+            print('[조회 서버 오류] 포트 %d 를 열지 못했습니다 → 서버 없이 주행: %s' % (SETTINGS['EVENT_SERVER_PORT'], e))
     # 트랙 윈도우 파일
     t = './'+imageDir+'/_'+imageDir+'_track.pickle'
     if os.path.exists(t):
