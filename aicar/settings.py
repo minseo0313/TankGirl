@@ -113,14 +113,30 @@ def validate(values):
         raise ValueError('정지 거리는 경적 거리보다 작아야 합니다')
     return out
 
+def sudoUser():
+    '''sudo 로 실행 중이면 원래 사용자의 (uid, gid), 아니면 None.'''
+    if not hasattr(os, 'geteuid') or os.geteuid() != 0:
+        return None
+    try:
+        return int(os.environ['SUDO_UID']), int(os.environ['SUDO_GID'])
+    except (KeyError, ValueError):
+        return None
+
 def writeJsonAtomic(path, data):
-    '''읽는 쪽이 반쯤 쓴 파일을 보지 않도록 임시 파일에 쓴 뒤 바꿔 넣습니다.'''
+    '''읽는 쪽이 반쯤 쓴 파일을 보지 않도록 임시 파일에 쓴 뒤 바꿔 넣습니다.
+    ar.py 는 sudo(root)로, settings_gui.py 는 일반 사용자로 실행하므로, root 가 쓴 폴더와 파일은
+    원래 사용자 소유로 돌려 둡니다 (안 그러면 GUI 가 status.json 을 못 읽고 control.json 을 못 씀).'''
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    owner = sudoUser()
+    if owner:
+        os.chown(str(path.parent), *owner)          # 예전에 root 로 만든 runtime/ 도 여기서 바로잡힘
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix='.tmp-', suffix='.json')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        if owner:
+            os.chown(tmp, *owner)
         os.replace(tmp, str(path))
     except BaseException:
         if os.path.exists(tmp):
@@ -211,4 +227,15 @@ if __name__ == '__main__':
         assert w.poll(now=time.time() + 2) is None              # 그대로 → None
         writeJsonAtomic(f, dict(d, RUN_SPEED=999))
         assert load(f)['RUN_SPEED'] == 70                       # 틀린 항목만 기본값
+    # sudo 로 실행하면 runtime 파일을 원래 사용자 소유로 (root 가 아닐 때는 건드리지 않음)
+    import unittest.mock as mock
+    with tempfile.TemporaryDirectory() as t, mock.patch('os.geteuid', return_value=0, create=True), \
+            mock.patch.dict(os.environ, {'SUDO_UID': '1000', 'SUDO_GID': '1000'}), mock.patch('os.chown') as chown:
+        writeJsonAtomic(Path(t) / 'runtime' / 'status.json', {'a': 1})
+        owners = {c.args[1:] for c in chown.call_args_list}
+        assert chown.call_count == 2 and owners == {(1000, 1000)}          # 폴더와 파일
+    with tempfile.TemporaryDirectory() as t, mock.patch('os.geteuid', return_value=1000, create=True), \
+            mock.patch('os.chown') as chown:
+        writeJsonAtomic(Path(t) / 'x.json', {})
+        assert chown.call_count == 0
     print('settings 자체 점검 통과')
