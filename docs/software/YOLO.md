@@ -48,7 +48,7 @@ python3 gi.py wayA
 1. `yolo/train/train_all.ipynb` 를 Colab 에서 엽니다.
 2. 파일 창에 `wayA.zip`(dl.py [Z]) 과 `yolo_dataset.zip` 을 올립니다.
 3. 런타임 유형을 T4 GPU 로 바꾸고 모두 실행합니다. Drive 연결을 물으면 허용합니다(결과 백업용, `MyDrive/aicar_models/`).
-4. 2부의 test 평가 결과(클래스별 recall)를 `yolo/models/README.md` 에 적습니다. 목표는 재현율 85% 이상입니다([PROJECT_PLAN.md](PROJECT_PLAN.md)).
+4. 2부의 test 평가 결과(클래스별 recall)를 `yolo/models/README.md` 에 적습니다. 목표는 재현율 85% 이상입니다([PROJECT_PLAN.md](../planning/PROJECT_PLAN.md)).
 5. 끝나면 `wayA_models.zip` 이 내려받아집니다.
 
 사람 모델은 학습하지 않고 COCO 사전학습 `yolo26n.pt` 를 416px NCNN 으로 변환만 합니다.
@@ -79,5 +79,5 @@ python3 benchmark/dual_ncnn_pi_benchmark.py --source images --images <사진 폴
 
 - 기본 모델 경로는 `yolo/models/` 입니다. 다른 모델은 `--person-model`, `--animal-model` 로 지정합니다.
 - 결과는 `yolo/benchmark/results/` 에 CSV·JSON 으로 저장됩니다. 요약 수치만 `yolo/models/README.md` 에 옮깁니다.
-- 이 차의 카메라는 CSI 라서 `--source camera`(OpenCV `VideoCapture`)로는 열리지 않습니다([IR_camera.md](IR_camera.md)).
+- 이 차의 카메라는 CSI 라서 `--source camera`(OpenCV `VideoCapture`)로는 열리지 않습니다([IR_camera.md](../hardware/IR_camera.md)).
 - 측정값은 모델 추론만의 시간입니다. 실제 주행 중 탐지 시간은 `ar.py` 화면의 `YOLO ... mS` 로 봅니다.

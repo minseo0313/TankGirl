@@ -96,12 +96,18 @@ aicar/              원본 aicar 코드 (수정하지 않고 사용)
   ar.py             자율주행 + 서보모터 2개 키 조작 + YOLO 탐지
   yolo_detect.py    YOLO 동물·사람 탐지 스레드 (ar.py 에서 사용)
   od.py             객체(동물·사람) 탐지
-yolo/               노루·멧돼지·사람 탐지 YOLO 학습·벤치마크 (docs/YOLO.md)
+yolo/               노루·멧돼지·사람 탐지 YOLO 학습·벤치마크 (docs/software/YOLO.md)
   train/            주행 + 탐지 한 번에 학습하는 Colab 노트북(train_all.ipynb), data.yaml
   benchmark/        Pi 추론 시간 측정
   models/           모델 기록 README (모델 파일은 git 제외)
 assets/images/      README·문서용 이미지
-docs/               캡스톤 문서 (git 제외)
+docs/               캡스톤 문서 (안내: docs/README.md)
+  planning/         수행계획서
+  hardware/         모터, 모터 드라이버, 서보, 카메라, LCD
+  software/         YOLO 학습·탐지, 인터페이스 명세
+  business-rules/   주행 비즈니스 규칙
+  scenarios/        동작 시나리오
+  issues/           문제 해결 기록
 ```
 
 `aicar/` 의 원본 파일은 `.gitattributes` 로 줄바꿈 변환 없이 그대로 보관합니다.
@@ -124,7 +130,7 @@ python3 dl.py wayA
 
 # 3. (Colab 학습 시) aicarA.ipynb 에 wayA.zip 업로드 → T4 GPU → 모두 실행
 #    → _wayA_model_check.pt 를 Pi 의 ~/Downloads 또는 aicar/wayA/ 에 복사
-#    주행 + 탐지를 함께 학습하려면 yolo/train/train_all.ipynb (docs/YOLO.md)
+#    주행 + 탐지를 함께 학습하려면 yolo/train/train_all.ipynb (docs/software/YOLO.md)
 #    → wayA_models.zip 을 aicar/ 에서 풀기 (wayA/ 에 .pt 와 YOLO 모델이 함께 놓임)
 
 # 4. 자율주행 - [G] 시작, [D] 거리센서, [O] YOLO 탐지 켜기·끄기, [Space] 정지, [X] 종료

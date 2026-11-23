@@ -1,6 +1,6 @@
 # 적외선 카메라 (OV5647 IR-CUT)
 
-> **2026-11-06 현재 환경:** 아래 2026-11-05 Legacy 방식 확인 기록과 달리, 이번 Pi에서는 `start_x=1` 상태에서 카메라가 감지되지 않았습니다. `#start_x=1`, `camera_auto_detect=0`, `dtoverlay=ov5647`로 변경한 뒤 libcamera 인식·촬영에 성공했고 `gi.py`는 Picamera2로 변경했습니다. 재현 명령과 실제 로그는 [카메라 인식 이슈](issues/2026-11-06-ov5647-camera.md)를 기준으로 확인하세요. 아래 과거 코드·설정 설명이 현재 `gi.py`에도 그대로 적용되는 것은 아닙니다.
+> **2026-11-06 현재 환경:** 아래 2026-11-05 Legacy 방식 확인 기록과 달리, 이번 Pi에서는 `start_x=1` 상태에서 카메라가 감지되지 않았습니다. `#start_x=1`, `camera_auto_detect=0`, `dtoverlay=ov5647`로 변경한 뒤 libcamera 인식·촬영에 성공했고 `gi.py`는 Picamera2로 변경했습니다. 재현 명령과 실제 로그는 [카메라 인식 이슈](../issues/2026-11-06-ov5647-camera.md)를 기준으로 확인하세요. 아래 과거 코드·설정 설명이 현재 `gi.py`에도 그대로 적용되는 것은 아닙니다.
 
 주야간 자동 전환 적외선 카메라 모듈을 Raspberry Pi 4 에 연결해 주행·탐지 영상으로 쓰는 방법입니다.
 코드: `aicar/gi.py`, `aicar/ar.py`, `aicar/od.py` (카메라 여는 부분만 관련)
@@ -110,7 +110,7 @@ python3 -c "import cv2; c=cv2.VideoCapture(0,cv2.CAP_V4L); print(c.read()[0])"
 
 ### 크기: 전체 폭 70mm 초과
 
-라이트를 달면 80 × 30mm 로, 계획서의 **전체 폭 제한 70mm**([PROJECT_PLAN.md](PROJECT_PLAN.md))를 앞을 보게 달았을 때 10mm 넘습니다.
+라이트를 달면 80 × 30mm 로, 계획서의 **전체 폭 제한 70mm**([PROJECT_PLAN.md](../planning/PROJECT_PLAN.md))를 앞을 보게 달았을 때 10mm 넘습니다.
 
 | 방법 | 장단점 |
 |------|--------|

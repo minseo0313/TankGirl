@@ -13,7 +13,7 @@
 7. 농경지 협소 통로를 모사한 시험장, 정량평가 보고서, 최종 발표자료 및 시연 영상
 
 <p align="center">
-  <img src="assets/images/patrol-robot-dimension-drawing.png" alt="초소형 농경지 순찰 로봇 외형 치수도 - 평면도·정면도·측면도, 전체 외형 90×70×70 mm 제한" width="720">
+  <img src="../../assets/images/patrol-robot-dimension-drawing.png" alt="초소형 농경지 순찰 로봇 외형 치수도 - 평면도·정면도·측면도, 전체 외형 90×70×70 mm 제한" width="720">
 </p>
 <p align="center"><sub>외형 치수도 (Rev A, 검토용 / 제작 승인 전, 단위 mm)</sub></p>
 
@@ -30,7 +30,7 @@
 전체 규격만 확정 조건이며, 부품 공간과 형상은 제안값입니다. 렌즈·센서 개구부와 홀 위치·공차는 실측 후 확정합니다.
 
 <p align="center">
-  <img src="assets/images/patrol-robot-exterior-concept.png" alt="초소형 농경지 순찰 로봇 외형 설계 개념도 - 카메라, IR 조명, 기피용 LED, 스피커, 전방 거리센서, 소형 무한궤도" width="640">
+  <img src="../../assets/images/patrol-robot-exterior-concept.png" alt="초소형 농경지 순찰 로봇 외형 설계 개념도 - 카메라, IR 조명, 기피용 LED, 스피커, 전방 거리센서, 소형 무한궤도" width="640">
 </p>
 <p align="center"><sub>외형 설계 개념도 (목표 규격 9 × 7 × 7 cm 이내, 부품 배치 검증 전)</sub></p>
 

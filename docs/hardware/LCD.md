@@ -8,7 +8,7 @@ Raspberry Pi 4 의 DSI 단자에 연결하는 4.3인치 터치 화면 정리입�
 > 이 문서는 **보드 사진**, **코드에서 확인한 것**, **판매처(Waveshare) 자료**를 구분해 적었습니다.
 > Pi 에서 실제로 확인하지 않은 항목은 **(미확인)** 으로 표시했습니다. 확인한 뒤 고쳐 주세요.
 
-> **계획서 기준으로 최종 로봇에는 LCD 를 쓰지 않습니다**([PROJECT_PLAN.md](PROJECT_PLAN.md)). 화면은 Wi-Fi 원격 접속(VNC)으로 봅니다.
+> **계획서 기준으로 최종 로봇에는 LCD 를 쓰지 않습니다**([PROJECT_PLAN.md](../planning/PROJECT_PLAN.md)). 화면은 Wi-Fi 원격 접속(VNC)으로 봅니다.
 > 이 LCD 는 기존 자율주행차 키트 구성품이며, 개발 중 Pi 상태 확인용으로만 씁니다.
 
 ## 1. 보드 정보 (사진에서 확인)
@@ -43,7 +43,7 @@ Raspberry Pi 4 의 DSI 단자에 연결하는 4.3인치 터치 화면 정리입�
 
 ## 4. Pi 설정 (미확인)
 
-2026-11-05 기록은 **Debian 11 (Bullseye) + Legacy Camera 스택**(`start_x=1`) 기준입니다. 2026-11-06 현재 환경은 libcamera/Picamera2로 변경했습니다([카메라 인식 이슈](issues/2026-11-06-ov5647-camera.md)). 아래 LCD 설정과 현재 카메라 설정의 조합은 별도로 검증하지 않았습니다.
+2026-11-05 기록은 **Debian 11 (Bullseye) + Legacy Camera 스택**(`start_x=1`) 기준입니다. 2026-11-06 현재 환경은 libcamera/Picamera2로 변경했습니다([카메라 인식 이슈](../issues/2026-11-06-ov5647-camera.md)). 아래 LCD 설정과 현재 카메라 설정의 조합은 별도로 검증하지 않았습니다.
 판매처 안내는 Bullseye 이후 기준으로 `/boot/config.txt` 에 아래 두 줄을 넣고 재부팅합니다.
 
 ```
