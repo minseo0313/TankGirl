@@ -25,7 +25,7 @@ import settings
 from event_log import RESULTS
 from stimulus import KINDS
 
-STATUS_REFRESH_MS = 1000
+STATUS_REFRESH_MS = 300          # 시나리오 지금 단계가 바로 보이도록 자주 확인
 FONT_FAMILIES = ('Pretendard', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', 'NanumGothic')
 RESULT_LABELS = {'left': '이탈', 'stayed': '잔류', 'unknown': '관찰 불가', 'uncertain': '불확실', 'person_stop': '사람으로 중지'}
 
@@ -238,7 +238,8 @@ class SettingsApp:
 
     # 시나리오 탭: 왼쪽 시나리오 목록, 가운데 시퀀스(큰 동작)와 세부 단계를 바로 고침, 오른쪽 진행 로그 --------
     VALUE_LABELS = {'sound_a': '음향 A (빵)', 'sound_b': '음향 B', 'sound_led': '소리와 LED', 'led': 'LED만', **RESULT_LABELS}
-    ANGLE_DEFAULTS = {'servo_to': (90, 90), 'servo_by': (0, 0)}     # 동작을 처음 고를 때 넣는 각도
+    ANGLE_DEFAULTS = {'servo_to': (90, 90), 'servo_by': (0, 0), 'sweep': (45, 120)}   # 동작을 처음 고를 때 넣는 각도
+    ACCENT = '#0A84FF'                                               # 지금 단계 표시
     HINT = '#8E8E93'
 
     def _scenarioTab(self, parent):
@@ -260,6 +261,9 @@ class SettingsApp:
         self.scnPick.bind('<<ComboboxSelected>>', lambda e: self._showScenario())
         ttk.Button(top, text='▶ 실행', width=6, command=self._runScenario).grid(row=0, column=1, padx=(6, 0))
         ttk.Button(top, text='■ 중지', width=6, command=lambda: self._send('scenario_stop')).grid(row=0, column=2, padx=(4, 0))
+        self.scnNow = ttk.Label(top, text='지금: 대기', font=self.boldFont, foreground=self.ACCENT)
+        self.scnNow.grid(row=1, column=0, columnspan=3, sticky='w', pady=(6, 0))
+        self.seqHeads = []                                 # 시퀀스 블록 번호 (지금 단계에 ▶ 표시)
         self.scnTitle = ttk.Label(f, text='', foreground=self.HINT)
         self.scnTitle.grid(row=1, column=0, sticky='w', pady=(4, 0))
 
@@ -313,9 +317,12 @@ class SettingsApp:
         title, target, order = scn.SCENARIOS[sid]
         self.scnTitle.config(text='대상: %s · {name} 은 대상 이름으로 바뀜 · 같은 시퀀스를 쓰는 시나리오는 함께 바뀜'
                              % target['name'], wraplength=420)
+        self.seqHeads = []
         for n, key in enumerate(order):
             head = ttk.Frame(self.seqBox)
-            ttk.Label(head, text='%d.' % (n + 1), font=self.boldFont).pack(side='left')
+            num = ttk.Label(head, text='%d.' % (n + 1), font=self.boldFont)
+            num.pack(side='left')
+            self.seqHeads.append(num)
             tv = tk.StringVar(value=self.seqs[key][0])
             self._bindVar(tv, lambda v, k=key: self.seqs[k].__setitem__(0, v), self._dirty)
             ttk.Entry(head, textvariable=tv, width=22, font=self.boldFont).pack(side='left', padx=4)
@@ -349,7 +356,7 @@ class SettingsApp:
         choices = scn.ACTIONS[act][1]
         if choices == scn.ANGLES:
             lo, hi = scn.ANGLE_RANGE[act]
-            for idx, text in ((1, '위아래'), (2, '좌우')):
+            for idx, text in zip((1, 2), scn.ANGLE_LABELS[act]):
                 ttk.Label(line, text=text).pack(side='left', padx=(6, 0))
                 v = tk.StringVar(value=str(step[1][idx]))
                 self._bindVar(v, lambda x, idx=idx: step[1].__setitem__(idx, x), self._dirty)
@@ -429,6 +436,17 @@ class SettingsApp:
             self._showScenario()
 
     def _showProgress(self, run):
+        # 지금 단계: 위쪽 한 줄 + 고른 시나리오면 해당 시퀀스 블록 번호에 ▶
+        if run['done']:
+            stopped = next((h.split('중지:', 1)[1].strip() for h in run['history'] if '중지:' in h), None)
+            self.scnNow.config(text='지금: %s %s' % (run['id'], '중지 (%s)' % stopped if stopped else '끝'))
+        else:
+            nxt = '\n다음: %s (%.1f초 뒤)' % (run['next'], run['nextIn']) if run.get('next') and run.get('nextIn') is not None else ''
+            self.scnNow.config(text='지금: %s  %s → %s%s' % (run['id'], run.get('sequence', ''), run.get('step', ''), nxt))
+        current = run.get('seq', -1) if run['id'] == self._selectedScenario() and not run['done'] else -1
+        for i, num in enumerate(self.seqHeads):
+            num.config(text=('▶ %d.' if i == current else '%d.') % (i + 1),
+                       foreground=self.ACCENT if i == current else '')
         text = '%s %s\n시퀀스 %s\n\n%s' % (run['id'], '끝' if run['done'] else '실행 중', run['sequence'],
                                         '\n'.join(run['history']))
         if text != self.scnLogText:                        # 같으면 다시 쓰지 않음 (스크롤 유지)

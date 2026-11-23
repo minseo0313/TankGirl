@@ -288,6 +288,9 @@ def runScenarioActions(actions, frame):
             aimer.moveTo(*aim.computeAim(box, aimer.getAngles(), dict(SETTINGS, AIM_MAX_STEP_DEG=180)), SETTINGS)
         elif act[0] == 'servo_to':                # 그 각도로 (서보 범위로 자름, AIM-03)
             aimer.moveTo(act[1], act[2], SETTINGS)
+        elif act[0] == 'servo_pan':               # 좌우 서보(2번)만 (서보 좌우로 쓸기가 프레임마다 조금씩 보냄)
+            servoSweep[SERVO2_NAME] = 0
+            servoMoveTo(servo2, SERVO2_NAME, int(aim.clamp(act[1], SETTINGS['AIM_PAN_MIN'], SETTINGS['AIM_PAN_MAX'])), '')
         elif act[0] == 'servo_by':                # 지금 각도에서 그만큼 더
             tilt, pan = aimer.getAngles()
             aimer.moveTo(tilt + act[1], pan + act[2], SETTINGS)
@@ -297,6 +300,8 @@ def runScenarioActions(actions, frame):
             aimer.aimHold()
         elif act[0] == 'stim':
             stimulus.start(act[1], SETTINGS['STIMULUS_SEC'], SETTINGS)
+            for err in stimulus.errors:           # 못 켠 이유를 GUI 진행 로그에 (터미널만 보면 놓치기 쉬움)
+                scenarioRun.history.append('          ⚠ %s' % err)
         elif act[0] == 'stim_stop':
             stimulus.stop()
         elif act[0] == 'photo':
@@ -765,6 +770,10 @@ def main():
                 runScenarioActions(scenarioRun.stop(startCycle, '사람이 보임 (SAFE-06)'), frame)
             else:
                 runScenarioActions(scenarioRun.step(startCycle), frame)
+            if VIEW_FLAG:                         # 카메라 창에 지금 단계 (한글은 OpenCV 가 못 그려 번호만)
+                st = scenarioRun.status()
+                cv.putText(viewWin, f"{st['id']} STEP {st['seq'] + 1}/{st['seqCount']}", (90, 45),
+                           cv.FONT_HERSHEY_COMPLEX_SMALL, 1, MAGENTA)
         # 설정 GUI 실험 명령 -------------------------------------------------------------------
         c = commands.poll()
         if c:
@@ -936,7 +945,8 @@ def main():
         if servoKey in SERVO_MANUAL_KEYS:                     # 수동 조작이 자동 조준보다 먼저 (AIM-06)
             aimer.pause(SETTINGS['MANUAL_OVERRIDE_SEC'])
         # 설정 GUI, 조회 서버에 보여 줄 상태 ------------------------------------------------------
-        if startCycle - statusTime >= STATUS_PERIOD:
+        # 시나리오가 도는 동안은 GUI 에 지금 단계가 바로 보이도록 자주 씀
+        if startCycle - statusTime >= (0.2 if scenarioRun is not None and not scenarioRun.done else STATUS_PERIOD):
             statusTime = startCycle
             STATUS.update(state='자율주행' if autoRun else ('수동 주행' if (mL or mR) else '정지'),
                           detect_on=DETECT_ON, person=personSeen, animal=animalSeen,
@@ -945,7 +955,7 @@ def main():
                           stimulus=stimulus.kind, last_command=lastCommand, detect_ok=detectOk,
                           allow_without_detect=SETTINGS['ALLOW_WITHOUT_DETECT'],
                           server_port=SETTINGS['EVENT_SERVER_PORT'] if eventServer else None,
-                          scenario=scenarioRun.status() if scenarioRun is not None else None)
+                          scenario=scenarioRun.status(startCycle) if scenarioRun is not None else None)
             try:
                 control.writeStatus(STATUS)
             except OSError as e:

@@ -11,6 +11,7 @@
 #   ('aim',)          시나리오 대상 위치(x, y) 쪽으로 서보 조준
 #   ('center',)       서보 가운데,  ('hold',) 서보 그 자리에서 멈춤
 #   ('servo_to', 위아래, 좌우)  그 각도로 (도),  ('servo_by', 위아래, 좌우)  지금 각도에서 그만큼 더 (도, +/-)
+#   ('sweep', 시작, 끝)  좌우 서보(2번)를 단계 시간 동안 시작 각도에서 끝 각도로 천천히 (한 번에 튀지 않게)
 #                     둘 다 ar.py 가 설정의 서보 범위(AIM_TILT_MIN/MAX 등)로 잘라서 보냅니다
 #   ('stim', kind)    자극 켜기 (sound_a 음향 A, sound_b 음향 B, sound_led 음향과 LED),  ('stim_stop',) 끄기
 #   ('log', result)   기록 (left 이탈, stayed 잔류, unknown 관찰 불가, uncertain 불확실, person_stop 사람으로 중지)
@@ -31,51 +32,35 @@ from stimulus import KINDS
 SEQ_FILE = RUNTIME_DIR / 'sequences.json'
 MAX_STEP_SEC = 60                                          # 단계 하나가 기다리는 최대 시간
 ANGLES = 'angles'                                          # 위아래, 좌우 각도 두 숫자를 받는 동작
-ANGLE_RANGE = {'servo_to': (0, 180), 'servo_by': (-180, 180)}
+ANGLE_RANGE = {'servo_to': (0, 180), 'servo_by': (-180, 180), 'sweep': (0, 180)}
+ANGLE_LABELS = {'servo_to': ('위아래', '좌우'), 'servo_by': ('위아래', '좌우'), 'sweep': ('좌우 시작', '끝')}
 # 고를 수 있는 동작: 이름 → (GUI 표시, 고를 값 / ANGLES / None)
 ACTIONS = {'wait': ('기다리기', None), 'photo': ('사진 찍기', None), 'aim': ('대상 쪽으로 조준', None),
-           'servo_to': ('서보 각도로', ANGLES), 'servo_by': ('서보 돌리기', ANGLES),
+           'servo_to': ('서보 각도로', ANGLES), 'servo_by': ('서보 돌리기', ANGLES), 'sweep': ('서보 좌우로 쓸기', ANGLES),
            'center': ('서보 가운데', None), 'hold': ('서보 멈춤', None), 'stim': ('자극 켜기', KINDS),
            'stim_stop': ('자극 끄기', None), 'log': ('기록', RESULTS)}
 
 # 시퀀스: 이름 → (큰 동작, [세부 단계]) ------------------------------------------------------
-# 쓰는 부품: 서보(카메라 방향), 스피커(빵 소리), LED, 바퀴(시나리오 동안 세워 둠). 거리센서는 아직 안 씀
+# 쓰는 부품: 서보(카메라 방향), 스피커(빵 소리), LED. 바퀴는 시나리오 동안 세워 둠. 거리센서는 아직 안 씀
 # 탐지는 아직 하지 않고 "동물이 있다"고 보고 기능을 규칙 순서대로 실행합니다.
 SEQUENCES = {
-    'stop':     ('멈춘다', [
-        ('바퀴 정지, 서보 가운데', ('center',), 1.5)]),
-    'detect':   ('동물을 탐지한다', [
-        ('{name} 탐지 (있다고 봄)', None, 1),
-        ('사진 찍기', ('photo',), 0)]),
-    'aim':      ('카메라를 동물 쪽으로 돌린다', [
-        ('서보를 {name} 쪽으로', ('aim',), 2)]),
-    'bang':     ('빵 소리를 낸다', [
-        ('스피커: 빵 소리 (음향 A)', ('stim', 'sound_a'), 1.5)]),
-    'led':      ('LED 를 켠다', [
-        ('LED 깜빡임', ('stim', 'led'), 3),
-        ('LED 끄기', ('stim_stop',), 0)]),
-    'bang_led': ('소리와 LED 를 함께 낸다', [
+    'scan':   ('서보를 돌리며 찾는다', [
+        ('서보를 왼쪽으로', ('servo_to', 90, 45), 0.5),
+        ('오른쪽으로 천천히 돌리기', ('sweep', 45, 120), 2)]),
+    'found':  ('카메라에 잡힌다', [
+        ('카메라에 {name}가 잡힘, 서보 멈춤', None, 0.3)]),
+    'scare':  ('빵 소리와 LED 를 함께 켠다', [
         ('빵 소리 + LED 깜빡임', ('stim', 'sound_led'), 3),
         ('소리, LED 끄기', ('stim_stop',), 0)]),
-    'wait':     ('지켜본다', [
-        ('5초 기다림 (서보 고정)', None, 5)]),
-    'return':   ('복귀한다', [
+    'return': ('가운데로 돌아온다', [
         ('서보 가운데', ('center',), 1.5)]),
 }
-RESULT_NAMES = {'left': '이탈', 'stayed': '잔류, 확인 필요', 'unknown': '관찰 불가',
-                'uncertain': '불확실', 'person_stop': '사람으로 중지'}
-for _r, _label in RESULT_NAMES.items():                     # 'log_left' 등: 기록한다
-    SEQUENCES['log_' + _r] = ('기록한다', [('기록: %s (사진과 함께)' % _label, ('log', _r), 0)])
 
 # 시나리오: 번호 → (제목, 대상, [시퀀스 순서]) ---------------------------------------------------
-# 대상: name 표시 이름, species 기록 종류, x, y 화면 위치 (카메라 640x480), zone 구역 (None = 미정)
+# 대상: name 표시 이름, species 기록 종류, x, y 화면 위치 (카메라 640x480, '대상 쪽으로 조준' 에서 씀), zone 구역
 DEER = {'name': '노루', 'species': 'roe_deer', 'x': 480, 'y': 120, 'zone': 2}
 SCENARIOS = {
-    'S-02': ('동물 탐지 → 빵 소리 → LED', DEER,
-             ['stop', 'detect', 'aim', 'bang', 'led', 'wait', 'log_left', 'return']),
-    'S-03': ('한 번 더 대응 (소리와 LED 함께)', dict(DEER, x=320, y=240),
-             ['stop', 'detect', 'aim', 'bang', 'led', 'wait', 'aim', 'bang_led', 'wait', 'log_stayed', 'return']),
-    'S-01': ('탐지 없음 → 그대로 복귀', DEER, ['stop', 'wait', 'return']),
+    'S-02': ('서보로 찾고 빵 소리 + LED', DEER, ['scan', 'found', 'scare', 'return']),
 }
 # 그 밖의 시나리오(사람, 장애물 등)는 docs/scenarios/scenarios.md 에만 있습니다
 
@@ -148,18 +133,35 @@ class Player:
         self.index, self.nextAt, self.start, self.seq = 0, now, now, -1
         self.stimuli, self.done, self.history = [], not self.steps, []   # 단계를 다 지웠으면 바로 끝
         self.photo = None                                 # ('photo',) 로 잡은 화면 (ar.py 가 넣음)
+        self.sweep, self.lastPan = None, None             # 진행 중인 '서보 좌우로 돌리기' (시작 시각, 시간, 시작, 끝)
+
+    def _label(self, i):
+        return self.steps[i][1][0].replace('{name}', self.target['name'])
 
     def step(self, now):
-        '''이번 프레임에 실행할 동작 목록. aim 은 대상 위치를 붙여 ('aim', x, y) 로 돌려줍니다.'''
+        '''이번 프레임에 실행할 동작 목록. aim 은 대상 위치를 붙여 ('aim', x, y),
+        sweep 은 프레임마다 ('servo_pan', 각도) 로 조금씩 돌려줍니다.'''
         out = []
+        if self.sweep and not self.done:
+            t0, dur, a, b = self.sweep
+            k = min(1.0, (now - t0) / dur) if dur > 0 else 1.0
+            pan = int(round(a + (b - a) * k))
+            if pan != self.lastPan:
+                self.lastPan = pan
+                out.append(('servo_pan', pan))
+            if k >= 1.0:
+                self.sweep = None
         while not self.done and now >= self.nextAt:
             n, (label, act, sec) = self.steps[self.index]
             if n != self.seq:
                 self.seq = n
                 self.history.append('%5.1f초 %d. %s' % (now - self.start, n + 1, self.seqTitles[n]))
-            self.history.append('          - %s' % label.replace('{name}', self.target['name']))
+            self.history.append('          - %s' % self._label(self.index))
             if act and act[0] == 'aim':
                 act = ('aim', self.target['x'], self.target['y'])
+            elif act and act[0] == 'sweep':
+                self.sweep, self.lastPan = (now, sec, act[1], act[2]), act[1]
+                act = ('servo_pan', act[1])
             elif act and act[0] == 'stim':
                 self.stimuli.append(act[1])
             elif act and act[0] == 'log':
@@ -173,16 +175,23 @@ class Player:
         return out
 
     def stop(self, now, why):
-        '''사람, 탐지 멈춤, [Space], GUI [중지]. 자극 끄고 서보 그 자리.'''
+        '''사람, [Space], GUI [중지]. 자극 끄고 서보 그 자리.'''
         if self.done:
             return []
-        self.done = True
+        self.done, self.sweep = True, None
         self.history.append('%5.1f초 중지: %s' % (now - self.start, why))
         return [('stim_stop',), ('hold',)]
 
-    def status(self):
+    def status(self, now=None):
+        '''GUI 에 보여 줄 지금 단계: seq(몇 번째 시퀀스, 0부터), step(지금 세부 단계 설명),
+        next(다음 세부 단계), nextIn(다음까지 남은 초, now 를 줄 때만).'''
         current = self.seqTitles[self.seq] if self.seq >= 0 else ''
-        return {'id': self.sid, 'done': self.done, 'sequence': '%d/%d %s' % (self.seq + 1, len(self.seqTitles), current),
+        hasNext = not self.done and self.index < len(self.steps)
+        return {'id': self.sid, 'done': self.done, 'seq': self.seq, 'seqCount': len(self.seqTitles),
+                'sequence': '%d/%d %s' % (self.seq + 1, len(self.seqTitles), current),
+                'step': self._label(self.index - 1) if self.index else '',
+                'next': self._label(self.index) if hasNext else '',
+                'nextIn': round(max(0.0, self.nextAt - now), 1) if hasNext and now is not None else None,
                 'history': self.history[-14:]}
 
 if __name__ == '__main__':
@@ -191,55 +200,57 @@ if __name__ == '__main__':
     with tempfile.TemporaryDirectory() as t:
         f = Path(t) / 'sequences.json'
         assert loadSequences(f) == SEQUENCES                                 # 파일 없음 → 기본값
-        seqs = dict(SEQUENCES, bang=('빵 소리를 낸다', [('삑 {name}', ('stim', 'sound_b'), 2.0)]))
+        seqs = dict(SEQUENCES, scare=('빵 소리와 LED', [('삑 {name}', ('stim', 'sound_b'), 2.0)]))
         saveSequences(seqs, f)
         got = loadSequences(f)
-        assert got['bang'] == ('빵 소리를 낸다', [('삑 {name}', ('stim', 'sound_b'), 2.0)]) and got['aim'] == SEQUENCES['aim']
+        assert got['scare'] == ('빵 소리와 LED', [('삑 {name}', ('stim', 'sound_b'), 2.0)]) and got['scan'] == SEQUENCES['scan']
         p = Player('S-02', 0.0, got)
         acts = [a for t in range(0, 600) for a in p.step(t * 0.1)]
         assert ('stim', 'sound_b') in acts and '          - 삑 노루' in p.history        # 편집한 단계로 실행
         assert checkStep(('위로', ['servo_to', '100', 60.0], 1)) == ('위로', ('servo_to', 100, 60), 1.0)
         assert checkStep(('더', ('servo_by', -20, 15), 0))[1] == ('servo_by', -20, 15)
+        assert checkStep(('쓸기', ('sweep', 30, 150), 2))[1] == ('sweep', 30, 150)
         for bad in (('', None, 1), ('x', ('stim', 'rm'), 1), ('x', ('aim', 'a'), 1), ('x', ('log',), 1),
                     ('x', None, 999), ('x', ('nope',), 1), ('x', None, 'abc'), ('x', ('servo_to', 200, 90), 1),
-                    ('x', ('servo_to', 90), 1), ('x', ('servo_by', 'a', 1), 1), ('x', ('servo_by', -181, 0), 1)):
+                    ('x', ('servo_to', 90), 1), ('x', ('servo_by', 'a', 1), 1), ('x', ('servo_by', -181, 0), 1),
+                    ('x', ('sweep', -5, 90), 1)):
             try:
                 checkStep(bad)
                 raise AssertionError('통과하면 안 됨: %r' % (bad,))
             except ValueError:
                 pass
-        writeJsonAtomic(f, {'bang': {'title': 'x', 'steps': [['y', ['stim', 'rm'], 1]]}, 'aim': 5})
+        writeJsonAtomic(f, {'scare': {'title': 'x', 'steps': [['y', ['stim', 'rm'], 1]]}, 'scan': 5})
         assert loadSequences(f) == SEQUENCES                                 # 틀린 시퀀스는 기본값
-        saveSequences(dict(SEQUENCES, stop=('멈춘다', [])), f)
-        assert Player('S-01', 0.0, loadSequences(f)).step(0) == []           # 빈 시퀀스는 건너뜀
+        saveSequences({k: (t, []) for k, (t, _) in SEQUENCES.items()}, f)
+        p = Player('S-02', 0.0, loadSequences(f))
+        assert p.done and p.step(0) == []                                    # 단계를 다 지우면 바로 끝
     for sid, (_, _, seqs) in SCENARIOS.items():
         assert all(q in SEQUENCES for q in seqs), sid       # 없는 시퀀스 이름 방지
         p = Player(sid, 0.0)
-        acts = [a for t in range(0, 600) for a in p.step(t * 0.1)]
+        for t in range(0, 600):
+            p.step(t * 0.1)
         assert p.done, sid                                   # 모두 끝까지 이어짐
-        logs = [a for a in acts if a[0] == 'log']
-        assert len(logs) == (0 if sid == 'S-01' else 1), sid
-        for a in acts:                                       # 사진은 기록보다 먼저
-            if a[0] == 'log' and sid != 'S-01':
-                assert ('photo',) in acts[:acts.index(a)], sid
-    p = Player('S-03', 0.0)
-    acts = [a for t in range(0, 600) for a in p.step(t * 0.1)]
-    assert [a[1] for a in acts if a[0] == 'stim'] == ['sound_a', 'led', 'sound_led']
-    assert [a[1] for a in acts if a[0] == 'log'][0]['result'] == 'stayed' and ('aim', 320, 240) in acts
-    p = Player('S-02', 0.0)                                              # 대표: 탐지 → 빵 소리 → LED
-    acts = [a for t in range(0, 600) for a in p.step(t * 0.1)]
-    order = [a[0] if a[0] != 'stim' else a[1] for a in acts if a[0] in ('photo', 'stim', 'log')]
-    assert order == ['photo', 'sound_a', 'led', 'log'], order
+    # 대표: 서보를 왼쪽으로 → 오른쪽으로 천천히 → 잡힘 → 빵 소리 + LED → 가운데
     p = Player('S-02', 0.0)
-    assert p.step(0.0) == [('center',)] and p.step(1.0) == []           # 멈추고 1.5초 기다림
-    assert p.status()['sequence'] == '1/8 멈춘다'
-    p.step(1.5)
-    assert p.status()['sequence'] == '2/8 동물을 탐지한다'                  # 다음 시퀀스로 이어짐
-    assert p.stop(2.0, '사람') == [('stim_stop',), ('hold',)] and p.step(99) == [] and p.stop(3, 'x') == []
-    assert outline('S-02')[1] == ('동물을 탐지한다', ['노루 탐지 (있다고 봄)', '사진 찍기'])
+    acts = [a for t in range(0, 200) for a in p.step(t * 0.05)]
+    pans = [a[1] for a in acts if a[0] == 'servo_pan']
+    assert acts[0] == ('servo_to', 90, 45) and pans[0] == 45 and pans[-1] == 120
+    assert pans == sorted(pans) and len(pans) > 20                      # 한 번에 튀지 않고 조금씩
+    kinds = [a[0] for a in acts if a[0] != 'servo_pan']
+    assert kinds == ['servo_to', 'stim', 'stim_stop', 'center'] and ('stim', 'sound_led') in acts, kinds
+    p = Player('S-02', 0.0)
+    p.step(0.0)
+    assert p.status()['seq'] == 0 and p.status()['step'] == '서보를 왼쪽으로'
+    st = p.status(0.2)
+    assert st['next'] == '오른쪽으로 천천히 돌리기' and st['nextIn'] == 0.3      # 다음 단계까지 남은 시간
+    p.step(0.5); p.step(2.6)
+    st = p.status()
+    assert st['seq'] == 1 and st['sequence'] == '2/4 카메라에 잡힌다' and st['step'] == '카메라에 노루가 잡힘, 서보 멈춤'
+    assert p.stop(4.5, '[Space]') == [('stim_stop',), ('hold',)] and p.step(99) == [] and p.stop(5, 'x') == []
+    assert outline('S-02')[1] == ('카메라에 잡힌다', ['카메라에 노루가 잡힘, 서보 멈춤'])
     try:
         Player('S-11', 0)
-        raise AssertionError('S-11 은 키보드 시험')
+        raise AssertionError('없는 시나리오')
     except ValueError:
         pass
     print('scenario 자체 점검 통과')
