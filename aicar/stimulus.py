@@ -33,6 +33,7 @@ class Stimulus:
         self.led = None
         self.ledPin = 0
         self.kind = None
+        self.errors = []                     # 마지막 start() 에서 못 켠 이유
 
     def _soundPath(self, kind, s):
         '''aicar/sounds/ 안의 파일만. 밖을 가리키면 None.'''
@@ -40,9 +41,15 @@ class Stimulus:
         p = (self.baseDir / name).resolve()
         return p if (self.baseDir / 'sounds').resolve() in p.parents else None
 
+    def _fail(self, msg):
+        '''못 켠 이유를 남기고 터미널에도 출력합니다 (ar.py 가 GUI 진행 로그에 보여 줌).'''
+        self.errors.append(msg)
+        print('[자극 오류] %s' % msg)
+        return False
+
     def _getLed(self, pin):
         if pin in RESERVED_PINS:
-            print('[자극 오류] LED 핀 %d 은 다른 장치가 씁니다 → LED 없이 소리만' % pin)
+            self._fail('LED 핀 %d 은 다른 장치가 씁니다 (설정 GUI 자극 탭 LED_PIN)' % pin)
             return None
         if self.led is not None and self.ledPin != pin:
             self.led.close()
@@ -51,60 +58,52 @@ class Stimulus:
             try:
                 self.led = self.ledFactory(pin)
                 self.ledPin = pin
-            except Exception as e:           # gpiozero 가 없거나 핀을 못 열면 소리만 냅니다
-                print('[자극 오류] LED(핀 %d)를 열지 못했습니다: %s: %s' % (pin, type(e).__name__, e))
+            except Exception as e:           # gpiozero 가 없거나 핀을 못 열면 LED 없이 진행
+                self._fail('LED(핀 %d)를 열지 못했습니다: %s: %s' % (pin, type(e).__name__, e))
                 self.led = None
         return self.led
 
-    def start(self, kind, sec, s):
-        '''자극을 켭니다. 바로 돌아오고 sec 초 뒤 스스로 꺼집니다. 못 켜면 False 와 이유를 출력.'''
-        if kind not in KINDS:
-            print('[자극 오류] 모르는 종류: %r (%s 중 하나)' % (kind, ', '.join(KINDS)))
-            return False
-        self.stop()
-        if kind == 'led':
-            return self._startLedOnly(sec, s)
+    def _startSound(self, kind, s):
         path = self._soundPath(kind, s)
         if path is None:
-            print('[자극 오류] 소리 파일은 aicar/sounds/ 안에 두어야 합니다 (설정 SOUND_A_FILE / SOUND_B_FILE)')
-            return False
+            return self._fail('소리 파일은 aicar/sounds/ 안에 두어야 합니다 (설정 SOUND_A_FILE / SOUND_B_FILE)')
         if not path.is_file():
-            print('[자극 오류] 소리 파일이 없습니다: %s (설정 SOUND_A_FILE / SOUND_B_FILE)' % path)
+            return self._fail('소리 파일이 없습니다: %s (설정 SOUND_A_FILE / SOUND_B_FILE)' % path)
+        try:
+            self.proc = self.popen([s['SOUND_PLAYER'], str(path)],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as e:
+            self.proc = None
+            return self._fail('%s 를 실행하지 못했습니다: %s' % (s['SOUND_PLAYER'], e))
+        return True
+
+    def _startLed(self, s):
+        if not s['LED_PIN']:
+            return self._fail('LED 핀이 "사용 안 함"입니다 (설정 GUI 자극 탭 LED_PIN 을 꽂은 핀으로)')
+        led = self._getLed(s['LED_PIN'])
+        if led is None:
             return False
+        led.blink(on_time=s['LED_BLINK_SEC'], off_time=s['LED_BLINK_SEC'])
+        return True
+
+    def start(self, kind, sec, s):
+        '''자극을 켭니다. 바로 돌아오고 sec 초 뒤 스스로 꺼집니다.
+        소리와 LED 는 따로 켭니다: 하나가 안 돼도 다른 하나는 냅니다. 둘 다 못 켜면 False.
+        못 켠 이유는 self.errors 에 남습니다.'''
+        self.errors = []
+        if kind not in KINDS:
+            return self._fail('모르는 종류: %r (%s 중 하나)' % (kind, ', '.join(KINDS)))
+        self.stop()
         with self.lock:
-            try:
-                self.proc = self.popen([s['SOUND_PLAYER'], str(path)],
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except OSError as e:
-                print('[자극 오류] %s 를 실행하지 못했습니다: %s' % (s['SOUND_PLAYER'], e))
-                self.proc = None
+            soundOn = kind != 'led' and self._startSound(kind, s)
+            ledOn = kind in ('sound_led', 'led') and self._startLed(s)
+            if not (soundOn or ledOn):
                 return False
-            if kind == 'sound_led' and s['LED_PIN']:
-                led = self._getLed(s['LED_PIN'])
-                if led is not None:
-                    led.blink(on_time=s['LED_BLINK_SEC'], off_time=s['LED_BLINK_SEC'])
             self.kind = kind
             self.timer = threading.Timer(sec, self.stop)
             self.timer.daemon = True
             self.timer.start()
-        print('[자극] %s %.1f초' % (kind, sec))
-        return True
-
-    def _startLedOnly(self, sec, s):
-        '''LED 만 sec 초 깜빡입니다. LED_PIN 이 '사용 안 함'이거나 LED 를 못 열면 False.'''
-        if not s['LED_PIN']:
-            print('[자극 오류] LED 핀이 "사용 안 함"입니다 (설정 GUI 자극 탭 LED_PIN)')
-            return False
-        with self.lock:
-            led = self._getLed(s['LED_PIN'])
-            if led is None:
-                return False
-            led.blink(on_time=s['LED_BLINK_SEC'], off_time=s['LED_BLINK_SEC'])
-            self.kind = 'led'
-            self.timer = threading.Timer(sec, self.stop)
-            self.timer.daemon = True
-            self.timer.start()
-        print('[자극] led %.1f초' % sec)
+        print('[자극] %s %.1f초%s' % (kind, sec, ' (일부만 켬)' if self.errors else ''))
         return True
 
     def stop(self):
@@ -175,8 +174,11 @@ if __name__ == '__main__':
         assert st.start('sound_a', 0.1, s)
         time.sleep(0.3)
         assert not st.active() and procs[1].terminated         # 시간이 지나면 스스로 꺼짐
-        st.start('sound_led', 1, dict(s, LED_PIN=23))          # 부저 핀 → LED 없이 소리만
+        assert st.start('sound_led', 1, dict(s, LED_PIN=23)) and st.errors   # 부저 핀 → LED 없이 소리만
         assert len(leds) == 1
+        assert st.start('sound_led', 0.1, dict(s, SOUND_A_FILE='sounds/none.wav'))   # 소리 파일 없어도 LED 는 켬
+        assert leds[0].state == 'blink' and '소리 파일이 없습니다' in st.errors[0]
+        time.sleep(0.3)
         n = len(procs)
         assert st.start('led', 0.1, s) and st.active() and leds[0].state == 'blink' and len(procs) == n   # 소리 없이 LED 만
         time.sleep(0.3)
