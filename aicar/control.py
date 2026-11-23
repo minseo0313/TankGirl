@@ -25,6 +25,8 @@ COMMANDS = {
     'stim_start': ('kind',),
     'stim_stop': (),
     'log_test': ('result',),
+    'scenario_start': ('id',),           # 시나리오 시험: 정해진 순서대로 실행 (scenario.py)
+    'scenario_stop': (),
 }
 
 def send(cmd, path=CONTROL_FILE, **args):

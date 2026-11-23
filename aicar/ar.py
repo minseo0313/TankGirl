@@ -82,6 +82,7 @@ import stimulus as stim               # 기피 자극 (IF-09)
 import event_log                      # 이벤트 기록 (IF-10)
 import event_server                   # 원격 조회 API (IF-11)
 import control                        # 설정 GUI 의 실험 명령과 상태 (IF-12)
+import scenario as scn                # 시나리오 시험: 시퀀스를 이어 순서대로 실행 (설정 GUI 시나리오 탭)
 #--------------------------------------------------------------------------------------------
 import os                             # File 읽기(Read) 쓰기(Write)와 관련된 라이브러리
 import sys                            # 커맨드 라인 처리를 위한 라이브러리
@@ -244,6 +245,7 @@ STATUS = {}                           # 설정 GUI 와 조회 서버(/api/status
 STATUS_PERIOD = 1.0                   # 상태 파일 쓰는 간격 (초)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 eventServer = None                    # 원격 조회 서버 (EVENT_SERVER_ON 일 때 __main__ 에서 켬)
+scenarioRun = None                    # 실행 중(또는 마지막) 시나리오 (scenario.Player)
 # 서보 키 (숫자열, 숫자 키패드, 소문자). 누르면 자동 조준을 MANUAL_OVERRIDE_SEC 동안 쉼 (AIM-06)
 SERVO_MANUAL_KEYS = {ord(c) for c in '123450qwert'} | {0x80 + ord(c) for c in '123450'}
 
@@ -278,10 +280,35 @@ def applySettings(s):
     if detector is not None:
         detector.conf, detector.hold = s['DETECT_CONF'], s['DETECT_HOLD_SEC']
 
+def runScenarioActions(actions, frame):
+    '''scenario.py 할 일 실행.'''
+    for act in actions:
+        if act[0] == 'aim':                   # 그 위치 쪽으로 한 번에 (자동 조준처럼 10도씩 나누지 않음)
+            box = (act[1] - 20, act[2] - 20, act[1] + 20, act[2] + 20)
+            aimer.moveTo(*aim.computeAim(box, aimer.getAngles(), dict(SETTINGS, AIM_MAX_STEP_DEG=180)), SETTINGS)
+        elif act[0] == 'servo_to':                # 그 각도로 (서보 범위로 자름, AIM-03)
+            aimer.moveTo(act[1], act[2], SETTINGS)
+        elif act[0] == 'servo_by':                # 지금 각도에서 그만큼 더
+            tilt, pan = aimer.getAngles()
+            aimer.moveTo(tilt + act[1], pan + act[2], SETTINGS)
+        elif act[0] == 'center':
+            aimer.aimCenter(SETTINGS)
+        elif act[0] == 'hold':
+            aimer.aimHold()
+        elif act[0] == 'stim':
+            stimulus.start(act[1], SETTINGS['STIMULUS_SEC'], SETTINGS)
+        elif act[0] == 'stim_stop':
+            stimulus.stop()
+        elif act[0] == 'photo':
+            scenarioRun.photo = frame.copy()      # 탐지한 순간의 화면을 기록에 씀
+        elif act[0] == 'log':
+            eventLog.write(act[1], photo=scenarioRun.photo if scenarioRun.photo is not None else frame)
+
 def handleCommand(c, frame, personSeen, detectOk):
     '''설정 GUI 실험 명령을 실행하고 결과 문장을 돌려줍니다.'''
+    global scenarioRun
     name, a, s = c['cmd'], c.get('args') or {}, SETTINGS
-    moves = ('aim_center', 'aim_angle', 'aim_point', 'stim_start')
+    moves = ('aim_center', 'aim_angle', 'aim_point', 'stim_start', 'scenario_start')
     try:
         if name in moves and not detectOk and not s['ALLOW_WITHOUT_DETECT']:
             return '탐지가 꺼져 있어 사람을 확인할 수 없음 → 거부 (SAFE-08, 설정 안전 탭에서 허용 가능)'
@@ -308,6 +335,16 @@ def handleCommand(c, frame, personSeen, detectOk):
         if name == 'stim_stop':
             stimulus.stop()
             return '자극 정지'
+        if name == 'scenario_start':
+            if personSeen:
+                return '사람이 보여서 시작하지 않음 (SAFE-06)'
+            scenarioRun = scn.Player(str(a['id']), time.time())
+            return '%s 시작' % a['id']
+        if name == 'scenario_stop':
+            if scenarioRun is None or scenarioRun.done:
+                return '실행 중인 시나리오 없음'
+            runScenarioActions(scenarioRun.stop(time.time(), 'GUI [중지]'), frame)
+            return '%s 중지' % scenarioRun.sid
         if name == 'log_test':
             rec = eventLog.write({'species': 'test', 'result': a['result'], 'zone': None}, photo=frame)
             return '기록 %s' % rec['id'] if rec else '기록 실패 (터미널 확인)'
@@ -705,10 +742,20 @@ def main():
         if personSeen:
             stimulus.stop()
             aimer.aimHold()
-        elif SETTINGS['AIM_AUTO'] and animalSeen and not autoRun and mL == 0 and mR == 0:
+        elif SETTINGS['AIM_AUTO'] and animalSeen and not autoRun and mL == 0 and mR == 0 and \
+                (scenarioRun is None or scenarioRun.done):
             target = aim.largestBox([b for b in boxes if b[4] in yd.ANIMAL_NAMES])
             if target is not None:
                 aimer.aimAt(target, SETTINGS)
+        # 시나리오 시험: 바퀴는 세우고 순서대로 실행. 사람이 보이거나 탐지가 멈추면 중지 -------------
+        if scenarioRun is not None and not scenarioRun.done:
+            autoRun = False; preKey = ord(' '); mL = 0; mR = 0
+            if personSeen:
+                runScenarioActions(scenarioRun.stop(startCycle, '사람이 보임 (SAFE-06)'), frame)
+            elif not detectOk and not SETTINGS['ALLOW_WITHOUT_DETECT']:
+                runScenarioActions(scenarioRun.stop(startCycle, '탐지가 멈춤 (SAFE-08)'), frame)
+            else:
+                runScenarioActions(scenarioRun.step(startCycle), frame)
         # 설정 GUI 실험 명령 -------------------------------------------------------------------
         c = commands.poll()
         if c:
@@ -855,6 +902,8 @@ def main():
         elif keyBoard == ord(' ') or keyBoard == 87:          # [Spacd] [End]
             autoRun = False; preKey = ord(' '); mL = 0; mR = 0; GPIO.output(MUSIC,GPIO.LOW)
             stimulus.stop(); horn = 0                         # 수동 정지는 자극, 경적도 끔 (SAFE-09 일부)
+            if scenarioRun is not None:
+                runScenarioActions(scenarioRun.stop(time.time(), '[Space]'), frame)
             
         # 서보모터 조작 (servo1 = 숫자 1~5, servo2 = Q~T) -------------------------------------
         # 숫자 키패드(NumLock)는 0xB0~0xB9 로 입력되므로 숫자열 키와 함께 확인합니다.
@@ -886,7 +935,8 @@ def main():
                           tilt=servoAngle[SERVO1_NAME], pan=servoAngle[SERVO2_NAME], aim_auto=SETTINGS['AIM_AUTO'],
                           stimulus=stimulus.kind, last_command=lastCommand, detect_ok=detectOk,
                           allow_without_detect=SETTINGS['ALLOW_WITHOUT_DETECT'],
-                          server_port=SETTINGS['EVENT_SERVER_PORT'] if eventServer else None)
+                          server_port=SETTINGS['EVENT_SERVER_PORT'] if eventServer else None,
+                          scenario=scenarioRun.status() if scenarioRun is not None else None)
             try:
                 control.writeStatus(STATUS)
             except OSError as e:
