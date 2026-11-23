@@ -470,9 +470,13 @@ def servoTurn(servo, name, direction):
     servoMoveTo(servo, name, target, '%s %d도' % ('왼쪽' if direction > 0 else '오른쪽', target))
 
 def servoKeepTurning(servo, name, direction):
-    '''"계속" 키: 정지 키를 누르거나 끝에 닿을 때까지 direction 쪽으로 움직입니다 (servoSweepStep 이 움직임).'''
+    '''"계속" 키: 정지 키를 누르거나 끝에 닿을 때까지 direction 쪽으로 움직입니다 (servoSweepStep 이 움직임).
+    같은 방향으로 움직이는 중에 같은 키를 한 번 더 누르면 멈춥니다.'''
+    if servoSweep[name] == direction:
+        servoStop(servo, name)
+        return
     servoSweep[name] = direction
-    print('[서보] %s %s으로 계속 (정지 키로 멈춤)' % (name, '왼쪽' if direction > 0 else '오른쪽'))
+    print('[서보] %s %s으로 계속 (같은 키를 한 번 더 누르거나 정지 키로 멈춤)' % (name, '왼쪽' if direction > 0 else '오른쪽'))
 
 def servoSweepStep(servo, name):
     '''메인 루프에서 화면 1장마다 부릅니다. "계속" 중이면 SERVO_SWEEP_STEP 만큼 움직이고, 끝에 닿으면 멈춥니다.'''
