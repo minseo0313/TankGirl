@@ -365,7 +365,6 @@ msgBoxR = cv.imread('./_IMAGE/armR.png',cv.IMREAD_COLOR)
 #--------------------------------------------------------------------------------------------
 cv.namedWindow('Out', cv.WINDOW_NORMAL | cv.WINDOW_FREERATIO)
 cv.setWindowProperty('Out', cv.WND_PROP_ASPECT_RATIO, cv.WINDOW_FREERATIO)
-cv.setWindowProperty('Out', cv.WND_PROP_FULLSCREEN, cv.WINDOW_FULLSCREEN)
 # 화면 해상도로 늘려 표시하고(흰 여백 제거) 저장·제어 좌표는 800x480을 유지한다.
 import re
 import subprocess
@@ -376,6 +375,14 @@ if display_match is None:
 DISPLAY_X, DISPLAY_Y = map(int, display_match.groups())
 if DISPLAY_X <= 0 or DISPLAY_Y <= 0:
     raise RuntimeError('화면 해상도는 양수여야 합니다.')
+if SETTINGS['SPLIT_SCREEN']:
+    # 화면 나누기: 카메라 창은 왼쪽 위에 800x480 비율로, 오른쪽은 settings_gui.py 가 차지 (설정 화면 탭)
+    DISPLAY_X = int(DISPLAY_X * SETTINGS['SPLIT_RATIO'])
+    DISPLAY_Y = min(DISPLAY_Y, DISPLAY_X * 480 // 800)
+    cv.resizeWindow('Out', DISPLAY_X, DISPLAY_Y)
+    cv.moveWindow('Out', 0, 0)
+else:
+    cv.setWindowProperty('Out', cv.WND_PROP_FULLSCREEN, cv.WINDOW_FULLSCREEN)
 
 #--------------------------------------------------------------------------------------------
 # CSI 카메라는 libcamera 기반이라 cv.VideoCapture(V4L)로는 영상이 None 으로 온다

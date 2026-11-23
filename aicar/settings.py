@@ -66,6 +66,8 @@ SCHEMA = [
       names={0: '사용 안 함', 4: '4', 16: '16', 19: '19', 22: '22'}, rule='STIM-01'),
     P('SOUND_PLAYER', 'aplay', '자극', '소리 재생 프로그램', choices=('aplay', 'paplay', 'mpg123'), rule='STIM-02', adv=True),
     P('LED_BLINK_SEC', 0.2, '자극', 'LED 깜빡임 간격 (초)', 0.05, 2.0, rule='STIM-01', adv=True),
+    P('SPLIT_SCREEN', True, '화면', '화면 나누기: 왼쪽 카메라 창(ar.py), 오른쪽 설정 창', rule='', restart=True),
+    P('SPLIT_RATIO', 0.5, '화면', '화면 나누기에서 카메라 창이 차지하는 가로 비율', 0.3, 0.8, rule='', restart=True),
     P('EVENT_SERVER_ON', False, '기록', '원격 조회 서버 켜기', rule='LOG-02', restart=True),
     P('EVENT_SERVER_PORT', 8000, '기록', '원격 조회 서버 포트', 1024, 65535, rule='LOG-02', restart=True, adv=True),
 ]

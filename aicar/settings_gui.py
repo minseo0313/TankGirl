@@ -33,8 +33,14 @@ class SettingsApp:
     def __init__(self, root):
         self.root = root
         root.title('TankGirl 설정과 실험')
-        root.minsize(1100, 680)
+        # 라즈베리파이 VNC 화면은 작을 수 있어서 최소 크기를 작게, 글꼴도 화면에 맞춤 (잘림 방지)
+        root.minsize(480, 360)
+        self.small = root.winfo_screenheight() < 900
+        self.fontSize = 10 if self.small else 12
         self._setFont()
+        self.scrollCanvases = []
+        for ev in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            root.bind_all(ev, self._wheel)
         self.vars = {}
         self.advRows = []                    # "고급 설정 보기"를 켜야 보이는 줄의 위젯들
         self.values = settings.load()
@@ -51,7 +57,7 @@ class SettingsApp:
         self._applyTopmost()
 
         nb = ttk.Notebook(root)
-        nb.pack(fill='both', expand=True, padx=12)
+        nb.pack(fill='both', expand=True, padx=8 if self.small else 12)
         self.seqs = self._editable(scn.loadSequences())   # 시나리오 탭에서 고치는 사본 (저장 전까지 ar.py 에 안 감)
         nb.add(self._scenarioTab(nb), text='시나리오')
         groups = []
@@ -59,8 +65,8 @@ class SettingsApp:
             if p['group'] not in groups:
                 groups.append(p['group'])
         for g in groups:
-            nb.add(self._settingsTab(nb, g), text=g)
-        nb.add(self._experimentTab(nb), text='실험')
+            self._scrollTab(nb, lambda parent, g=g: self._settingsTab(parent, g), g)
+        self._scrollTab(nb, self._experimentTab, '실험')
 
         bottom = ttk.Frame(root, padding=(12, 8))
         bottom.pack(fill='x')
@@ -71,6 +77,7 @@ class SettingsApp:
         self.msg.pack(side='left')
         root.bind('<Control-s>', lambda e: self.save())
         self._applyAdv()
+        self._placeWindow()
         self.refreshStatus()
 
     def _setFont(self):
@@ -78,7 +85,54 @@ class SettingsApp:
         family = next((f for f in FONT_FAMILIES if f in have), None)
         if family:
             for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont', 'TkHeadingFont'):
-                tkfont.nametofont(name).configure(family=family, size=12)
+                tkfont.nametofont(name).configure(family=family, size=self.fontSize)
+
+    def _scrollable(self, parent):
+        '''(바깥 틀, 캔버스, 안쪽을 넣는 함수). 내용이 화면보다 길면 세로 스크롤.'''
+        outer = ttk.Frame(parent)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(outer, highlightthickness=0, width=300, height=160)   # 작게 요청하고 창 크기만큼 늘어남
+        bar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        bar.grid(row=0, column=1, sticky='ns')
+        self.scrollCanvases.append(canvas)
+
+        def put(inner):
+            win = canvas.create_window((0, 0), window=inner, anchor='nw')
+            inner.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+            canvas.bind('<Configure>', lambda e: canvas.itemconfigure(win, width=e.width))
+        return outer, canvas, put
+
+    def _scrollTab(self, nb, build, text):
+        outer, canvas, put = self._scrollable(nb)
+        put(build(canvas))
+        nb.add(outer, text=text)
+
+    def _wheel(self, e):
+        '''마우스 휠: 포인터 아래에 있는 스크롤 영역만 움직임 (macOS/Windows 는 delta, 리눅스(Pi)는 Button-4/5).'''
+        w = self.root.winfo_containing(e.x_root, e.y_root)
+        while w is not None and w not in self.scrollCanvases:
+            w = w.master
+        if w is not None:
+            w.yview_scroll(-1 if (getattr(e, 'num', 0) == 4 or e.delta > 0) else 1, 'units')
+
+    def _placeWindow(self):
+        '''화면 나누기(설정 SPLIT_SCREEN)면 ar.py 카메라 창 오른쪽 남은 자리에 맞춰 띄웁니다.'''
+        if not self.values['SPLIT_SCREEN']:
+            return
+        self.root.update_idletasks()
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        need = max(self.root.winfo_reqwidth(), *(self._innerWidth(c) + 40 for c in self.scrollCanvases))
+        # 화면이 좁으면 내용이 잘리지 않게 카메라 창 오른쪽을 조금 덮더라도 필요한 폭만큼 왼쪽으로
+        x = max(0, min(int(sw * self.values['SPLIT_RATIO']), sw - need))
+        self.root.geometry('%dx%d+%d+0' % (sw - x, sh - 80, x))      # 아래 80px 는 작업 표시줄 자리
+
+    @staticmethod
+    def _innerWidth(canvas):
+        return max((canvas.nametowidget(canvas.itemcget(i, 'window')).winfo_reqwidth()
+                    for i in canvas.find_all() if canvas.type(i) == 'window'), default=0)
 
     def _applyTopmost(self):
         # ar.py 의 OpenCV 창이 전체 화면이라 이 창이 뒤로 숨지 않게 합니다
@@ -128,7 +182,7 @@ class SettingsApp:
             key, d = p['key'], p['default']
             # ★ = 원본 aicar 에 처음부터 있던 값 (되도록 바꾸지 않음)
             label = ('★ ' if p['origin'] else '') + p['label'] + ('  (재시작 필요)' if p['restart'] else '')
-            lw = ttk.Label(f, text=label)
+            lw = ttk.Label(f, text=label, wraplength=230)           # 화면 반쪽에 들어가게 줄바꿈
             lw.grid(row=row, column=0, sticky='w', pady=4)
             if isinstance(d, bool):
                 var = tk.BooleanVar(value=self.values[key])
@@ -145,7 +199,7 @@ class SettingsApp:
                 var = tk.StringVar(value=str(self.values[key]))
                 w = ttk.Entry(f, textvariable=var, width=28)
             w.grid(row=row, column=1, sticky='w', padx=8)
-            kw = ttk.Label(f, text='%s  %s' % (key, p['rule']), foreground='#6E6E73')
+            kw = ttk.Label(f, text='%s  %s' % (key, p['rule']), foreground='#6E6E73', wraplength=150)
             kw.grid(row=row, column=2, sticky='w')
             if p['adv']:
                 self.advRows.append((lw, w, kw))
@@ -188,71 +242,52 @@ class SettingsApp:
     HINT = '#8E8E93'
 
     def _scenarioTab(self, parent):
-        f = ttk.Frame(parent, padding=8)
-        f.columnconfigure(1, weight=1)
-        f.rowconfigure(0, weight=1)
+        '''화면 반쪽(라즈베리파이 640px 안팎)에 들어가도록 한 줄로 쌓음: 고르기·실행 → 시퀀스 블록 → 저장 → 진행.'''
+        f = ttk.Frame(parent, padding=6)
+        f.columnconfigure(0, weight=1)
+        f.rowconfigure(2, weight=1)
         family = tkfont.nametofont('TkDefaultFont').actual('family')
-        self.boldFont = (family, 13, 'bold')
+        self.boldFont = (family, self.fontSize + 1, 'bold')
         self.actNames = {v[0]: k for k, v in scn.ACTIONS.items()}       # 표시 이름 → 동작
 
-        left = ttk.Frame(f)
-        left.grid(row=0, column=0, sticky='ns', padx=(0, 10))
-        ttk.Label(left, text='시나리오', font=self.boldFont).pack(anchor='w')
+        top = ttk.Frame(f)
+        top.grid(row=0, column=0, sticky='ew')
+        top.columnconfigure(0, weight=1)
         self.scnIds = list(scn.SCENARIOS)
-        self.scnList = tk.Listbox(left, width=24, exportselection=False)
-        for sid in self.scnIds:
-            self.scnList.insert('end', '%s  %s' % (sid, scn.SCENARIOS[sid][0]))
-        self.scnList.pack(fill='y', expand=True, pady=4)
-        self.scnList.bind('<<ListboxSelect>>', lambda e: self._showScenario())
-        ttk.Button(left, text='▶ 실행', command=self._runScenario).pack(fill='x')
-        ttk.Button(left, text='■ 중지', command=lambda: self._send('scenario_stop')).pack(fill='x', pady=4)
-        ttk.Label(left, text='S-11, S-15 는 ar.py 키보드로 시험.\n사람이 보이면 바로 멈춥니다.',
-                  foreground=self.HINT, justify='left').pack(anchor='w')
+        self.scnPick = ttk.Combobox(top, state='readonly', width=28,
+                                    values=['%s  %s' % (sid, scn.SCENARIOS[sid][0]) for sid in self.scnIds])
+        self.scnPick.grid(row=0, column=0, sticky='ew')
+        self.scnPick.bind('<<ComboboxSelected>>', lambda e: self._showScenario())
+        ttk.Button(top, text='▶ 실행', width=6, command=self._runScenario).grid(row=0, column=1, padx=(6, 0))
+        ttk.Button(top, text='■ 중지', width=6, command=lambda: self._send('scenario_stop')).grid(row=0, column=2, padx=(4, 0))
+        self.scnTitle = ttk.Label(f, text='', foreground=self.HINT)
+        self.scnTitle.grid(row=1, column=0, sticky='w', pady=(4, 0))
 
-        mid = ttk.Frame(f)
-        mid.grid(row=0, column=1, sticky='nsew')
-        mid.columnconfigure(0, weight=1)
-        mid.rowconfigure(1, weight=1)
-        self.scnTitle = ttk.Label(mid, text='', font=self.boldFont)
-        self.scnTitle.grid(row=0, column=0, columnspan=2, sticky='w')
-        canvas = tk.Canvas(mid, highlightthickness=0)
-        bar = ttk.Scrollbar(mid, orient='vertical', command=canvas.yview)
-        canvas.configure(yscrollcommand=bar.set)
-        canvas.grid(row=1, column=0, sticky='nsew', pady=4)
-        bar.grid(row=1, column=1, sticky='ns', pady=4)
+        outer, canvas, put = self._scrollable(f)
+        outer.grid(row=2, column=0, sticky='nsew', pady=4)
         self.seqBox = ttk.Frame(canvas)
-        win = canvas.create_window((0, 0), window=self.seqBox, anchor='nw')
-        self.seqBox.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.bind('<Configure>', lambda e: canvas.itemconfigure(win, width=e.width))
+        put(self.seqBox)
 
-        def wheel(e):                                   # macOS/Windows 는 delta, 리눅스(Pi)는 Button-4/5
-            canvas.yview_scroll(-1 if (getattr(e, 'num', 0) == 4 or e.delta > 0) else 1, 'units')
-        def bindWheel(on):
-            for ev in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
-                canvas.bind_all(ev, wheel) if on else canvas.unbind_all(ev)
-        canvas.bind('<Enter>', lambda e: bindWheel(True))
-        canvas.bind('<Leave>', lambda e: bindWheel(False))
-
-        bottom = ttk.Frame(mid)
-        bottom.grid(row=2, column=0, columnspan=2, sticky='ew')
-        ttk.Button(bottom, text='저장 (다음 실행부터 반영)', command=self._saveSequences).pack(side='right')
-        ttk.Button(bottom, text='이 시나리오 기본값으로', command=self._resetScenario).pack(side='right', padx=6)
-        self.seqMsg = ttk.Label(bottom, text='같은 시퀀스를 쓰는 다른 시나리오도 함께 바뀝니다', foreground=self.HINT)
+        bottom = ttk.Frame(f)
+        bottom.grid(row=3, column=0, sticky='ew')
+        ttk.Button(bottom, text='저장', command=self._saveSequences).pack(side='right')
+        ttk.Button(bottom, text='기본값으로', command=self._resetScenario).pack(side='right', padx=4)
+        self.seqMsg = ttk.Label(bottom, text='고친 뒤 [저장] → 다음 실행부터', foreground=self.HINT)
         self.seqMsg.pack(side='left')
 
-        log = ttk.LabelFrame(f, text='진행', padding=6)
-        log.grid(row=0, column=2, sticky='ns', padx=(10, 0))
-        self.scnLog = tk.Text(log, width=34, wrap='word', relief='flat', state='disabled', font=(family, 11))
-        self.scnLog.pack(fill='both', expand=True)
+        log = ttk.LabelFrame(f, text='진행', padding=4)
+        log.grid(row=4, column=0, sticky='ew', pady=(4, 0))
+        self.scnLog = tk.Text(log, height=5, width=40, wrap='word', relief='flat', state='disabled', font=(family, 10))
+        self.scnLog.pack(fill='x')
         self.scnLogText = ''
 
-        self.scnList.selection_set(0)                      # 맨 위 = 대표 시나리오 (S-02)
+        self.scnPick.current(0)                            # 맨 위 = 대표 시나리오 (S-02)
         self._showScenario()
         return f
 
     def _selectedScenario(self):
-        sel = self.scnList.curselection()
-        return self.scnIds[sel[0]] if sel else None
+        i = self.scnPick.current()
+        return self.scnIds[i] if i >= 0 else None
 
     def _runScenario(self):
         sid = self._selectedScenario()
@@ -276,61 +311,59 @@ class SettingsApp:
         for w in self.seqBox.winfo_children():
             w.destroy()
         title, target, order = scn.SCENARIOS[sid]
-        self.scnTitle.config(text='%s %s   (대상: %s)' % (sid, title, target['name']))
+        self.scnTitle.config(text='대상: %s · {name} 은 대상 이름으로 바뀜 · 같은 시퀀스를 쓰는 시나리오는 함께 바뀜'
+                             % target['name'], wraplength=420)
         for n, key in enumerate(order):
-            if n:
-                ttk.Label(self.seqBox, text='↓', foreground=self.HINT).pack()
             head = ttk.Frame(self.seqBox)
             ttk.Label(head, text='%d.' % (n + 1), font=self.boldFont).pack(side='left')
             tv = tk.StringVar(value=self.seqs[key][0])
             self._bindVar(tv, lambda v, k=key: self.seqs[k].__setitem__(0, v), self._dirty)
-            ttk.Entry(head, textvariable=tv, width=24, font=self.boldFont).pack(side='left', padx=4)
-            box = ttk.LabelFrame(self.seqBox, labelwidget=head, padding=6)
-            box.pack(fill='x', pady=2, padx=(0, 4))
+            ttk.Entry(head, textvariable=tv, width=22, font=self.boldFont).pack(side='left', padx=4)
+            box = ttk.LabelFrame(self.seqBox, labelwidget=head, padding=(6, 2))
+            box.pack(fill='x', pady=(2, 4), padx=(0, 4))
             box.columnconfigure(0, weight=1)
-            for c, text in enumerate(('세부 단계 ({name} = 대상 이름)', '동작', '값', '기다림')):
-                ttk.Label(box, text=text, foreground=self.HINT).grid(row=0, column=c, sticky='w', padx=(0, 4))
             steps = self.seqs[key][1]
             for i, step in enumerate(steps):
                 self._stepRow(box, key, i, step)
             ttk.Button(box, text='+ 단계 추가', command=lambda k=key: self._editSteps(k, 'add')).grid(
-                row=len(steps) + 1, column=0, sticky='w', pady=(4, 0))
+                row=2 * len(steps), column=0, sticky='w', pady=(2, 2))
 
     def _stepRow(self, box, key, i, step):
-        '''단계 한 줄: 설명, 동작, 값(자극 종류 / 기록 판정 / 위아래·좌우 각도), 기다리는 초, 위·아래·삭제.'''
-        r = i + 1
+        '''단계 하나 = 두 줄. 1줄: 설명, 위·아래·삭제. 2줄: 동작, 값(자극 종류 / 기록 판정 / 위아래·좌우 각도), 기다리는 초.'''
+        r = 2 * i
         lv = tk.StringVar(value=step[0])
         self._bindVar(lv, lambda v: step.__setitem__(0, v), self._dirty)
-        ttk.Entry(box, textvariable=lv, width=28).grid(row=r, column=0, sticky='ew', padx=(0, 4), pady=1)
+        ttk.Entry(box, textvariable=lv, width=20).grid(row=r, column=0, sticky='ew', pady=(4, 0))
+        bf = ttk.Frame(box)
+        bf.grid(row=r, column=1, sticky='e', padx=(4, 0), pady=(4, 0))
+        for text, how in (('▲', 'up'), ('▼', 'down'), ('✕', 'del')):
+            ttk.Button(bf, text=text, width=2, command=lambda h=how: self._editSteps(key, h, i)).pack(side='left')
+
+        line = ttk.Frame(box)
+        line.grid(row=r + 1, column=0, columnspan=2, sticky='w', padx=(12, 0), pady=(2, 0))
         act = step[1][0] if step[1] else 'wait'
         av = tk.StringVar(value=scn.ACTIONS[act][0])
-        cb = ttk.Combobox(box, textvariable=av, values=list(self.actNames), state='readonly', width=13)
+        cb = ttk.Combobox(line, textvariable=av, values=list(self.actNames), state='readonly', width=12)
         cb.bind('<<ComboboxSelected>>', lambda e: self._changeAct(step, self.actNames[av.get()]))
-        cb.grid(row=r, column=1, sticky='w', padx=(0, 4))
-        vf = ttk.Frame(box)
-        vf.grid(row=r, column=2, sticky='w', padx=(0, 4))
+        cb.pack(side='left')
         choices = scn.ACTIONS[act][1]
         if choices == scn.ANGLES:
             lo, hi = scn.ANGLE_RANGE[act]
             for idx, text in ((1, '위아래'), (2, '좌우')):
-                ttk.Label(vf, text=text).pack(side='left')
+                ttk.Label(line, text=text).pack(side='left', padx=(6, 0))
                 v = tk.StringVar(value=str(step[1][idx]))
                 self._bindVar(v, lambda x, idx=idx: step[1].__setitem__(idx, x), self._dirty)
-                ttk.Spinbox(vf, textvariable=v, from_=lo, to=hi, increment=5, width=4).pack(side='left', padx=(2, 6))
+                ttk.Spinbox(line, textvariable=v, from_=lo, to=hi, increment=5, width=4).pack(side='left', padx=(2, 0))
         elif choices:
             labels = [self.VALUE_LABELS.get(c, c) for c in choices]
             v = tk.StringVar(value=self.VALUE_LABELS.get(step[1][1], step[1][1]))
-            c2 = ttk.Combobox(vf, textvariable=v, values=labels, state='readonly', width=11)
+            c2 = ttk.Combobox(line, textvariable=v, values=labels, state='readonly', width=11)
             c2.bind('<<ComboboxSelected>>', lambda e: (step[1].__setitem__(1, choices[labels.index(v.get())]), self._dirty()))
-            c2.pack(side='left')
-        sf = ttk.Frame(box)
-        sf.grid(row=r, column=3, sticky='w')
+            c2.pack(side='left', padx=(6, 0))
         sv = tk.StringVar(value='%g' % float(step[2]) if self._isNumber(step[2]) else str(step[2]))
         self._bindVar(sv, lambda v: step.__setitem__(2, v), self._dirty)
-        ttk.Spinbox(sf, textvariable=sv, from_=0, to=scn.MAX_STEP_SEC, increment=0.5, width=4).pack(side='left')
-        ttk.Label(sf, text='초').pack(side='left', padx=(2, 6))
-        for text, how in (('▲', 'up'), ('▼', 'down'), ('✕', 'del')):
-            ttk.Button(sf, text=text, width=2, command=lambda h=how: self._editSteps(key, h, i)).pack(side='left')
+        ttk.Spinbox(line, textvariable=sv, from_=0, to=scn.MAX_STEP_SEC, increment=0.5, width=4).pack(side='left', padx=(8, 0))
+        ttk.Label(line, text='초').pack(side='left', padx=(2, 0))
 
     @staticmethod
     def _isNumber(v):
@@ -495,7 +528,7 @@ class SettingsApp:
                                 else '자극, 서보 실험 명령은 거부됩니다 (안전 탭에서 허용 가능)'))
             self.statusText.config(text='\n'.join(lines))
         else:
-            self.connLabel.config(text='○ ar.py 꺼짐 (설정 저장은 됨, 실험은 ar.py 를 켠 뒤)', foreground='#B25000')
+            self.connLabel.config(text='○ ar.py 꺼짐', foreground='#B25000')
             self.statusText.config(text='')
         self.root.after(STATUS_REFRESH_MS, self.refreshStatus)
 
