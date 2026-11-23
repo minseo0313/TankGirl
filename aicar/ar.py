@@ -308,7 +308,7 @@ def handleCommand(c, frame, personSeen, detectOk):
     '''설정 GUI 실험 명령을 실행하고 결과 문장을 돌려줍니다.'''
     global scenarioRun
     name, a, s = c['cmd'], c.get('args') or {}, SETTINGS
-    moves = ('aim_center', 'aim_angle', 'aim_point', 'stim_start', 'scenario_start')
+    moves = ('aim_center', 'aim_angle', 'aim_point', 'stim_start')
     try:
         if name in moves and not detectOk and not s['ALLOW_WITHOUT_DETECT']:
             return '탐지가 꺼져 있어 사람을 확인할 수 없음 → 거부 (SAFE-08, 설정 안전 탭에서 허용 가능)'
@@ -339,6 +339,9 @@ def handleCommand(c, frame, personSeen, detectOk):
             if personSeen:
                 return '사람이 보여서 시작하지 않음 (SAFE-06)'
             scenarioRun = scn.Player(str(a['id']), time.time())
+            if not detectOk:                    # 시나리오는 "동물이 있다고 보고" 순서대로 실행 (규칙 기반 시험)
+                scenarioRun.history.append('  탐지 꺼짐: 동물이 있다고 보고 순서대로 진행 (사람 확인 안 됨)')
+                return '%s 시작 (탐지 꺼짐, 사람 확인 안 됨: 주변을 직접 살피세요)' % a['id']
             return '%s 시작' % a['id']
         if name == 'scenario_stop':
             if scenarioRun is None or scenarioRun.done:
@@ -744,7 +747,8 @@ def main():
         # 사람이 보이면 자극 끄고 서보 멈춤 (SAFE-06 일부). 멈춰 있을 때만 동물 쪽 자동 조준 (AIM-02) ----
         # 탐지가 꺼졌거나 오류로 멈추면 사람을 확인할 수 없으므로 자극을 끔 (SAFE-08 일부)
         detectOk = DETECT_ON and detector is not None and detector.error is None
-        if not detectOk and not SETTINGS['ALLOW_WITHOUT_DETECT']:
+        # 시나리오 시험 중에는 끄지 않음: 탐지 없이 순서대로 실행하는 시험이므로 (사람이 보이면 아래에서 멈춤)
+        if not detectOk and not SETTINGS['ALLOW_WITHOUT_DETECT'] and (scenarioRun is None or scenarioRun.done):
             stimulus.stop()
         if personSeen:
             stimulus.stop()
@@ -754,13 +758,11 @@ def main():
             target = aim.largestBox([b for b in boxes if b[4] in yd.ANIMAL_NAMES])
             if target is not None:
                 aimer.aimAt(target, SETTINGS)
-        # 시나리오 시험: 바퀴는 세우고 순서대로 실행. 사람이 보이거나 탐지가 멈추면 중지 -------------
+        # 시나리오 시험: 바퀴는 세우고 순서대로 실행 (탐지가 꺼져 있어도 진행). 탐지가 켜져 있고 사람이 보이면 중지 ----
         if scenarioRun is not None and not scenarioRun.done:
             autoRun = False; preKey = ord(' '); mL = 0; mR = 0
             if personSeen:
                 runScenarioActions(scenarioRun.stop(startCycle, '사람이 보임 (SAFE-06)'), frame)
-            elif not detectOk and not SETTINGS['ALLOW_WITHOUT_DETECT']:
-                runScenarioActions(scenarioRun.stop(startCycle, '탐지가 멈춤 (SAFE-08)'), frame)
             else:
                 runScenarioActions(scenarioRun.step(startCycle), frame)
         # 설정 GUI 실험 명령 -------------------------------------------------------------------
