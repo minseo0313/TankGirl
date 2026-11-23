@@ -25,6 +25,8 @@ import settings
 from event_log import RESULTS
 from stimulus import KINDS
 
+# 창 빈 곳을 잡고 끌면 창이 움직임. 버튼, 입력 칸, 드롭다운, 스크롤바, 탭은 원래대로 동작하도록 뺌
+DRAG_CLASSES = {'TFrame', 'Frame', 'TLabel', 'Label', 'TLabelframe', 'Labelframe', 'Canvas'}
 STATUS_REFRESH_MS = 300          # 시나리오 지금 단계가 바로 보이도록 자주 확인
 FONT_FAMILIES = ('Pretendard', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', 'NanumGothic')
 RESULT_LABELS = {'left': '이탈', 'stayed': '잔류', 'unknown': '관찰 불가', 'uncertain': '불확실', 'person_stop': '사람으로 중지'}
@@ -41,6 +43,10 @@ class SettingsApp:
         self.scrollCanvases = []
         for ev in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
             root.bind_all(ev, self._wheel)
+        self.dragFrom = None
+        root.bind_all('<ButtonPress-1>', self._dragStart, add='+')
+        root.bind_all('<B1-Motion>', self._dragMove, add='+')
+        root.bind_all('<ButtonRelease-1>', lambda e: setattr(self, 'dragFrom', None), add='+')
         self.vars = {}
         self.advRows = []                    # "고급 설정 보기"를 켜야 보이는 줄의 위젯들
         self.values = settings.load()
@@ -109,6 +115,17 @@ class SettingsApp:
         outer, canvas, put = self._scrollable(nb)
         put(build(canvas))
         nb.add(outer, text=text)
+
+    def _dragStart(self, e):
+        w = e.widget
+        if isinstance(w, tk.Misc) and w.winfo_toplevel() is self.root and w.winfo_class() in DRAG_CLASSES:
+            self.dragFrom = (e.x_root - self.root.winfo_x(), e.y_root - self.root.winfo_y())
+        else:
+            self.dragFrom = None
+
+    def _dragMove(self, e):
+        if self.dragFrom:
+            self.root.geometry('+%d+%d' % (e.x_root - self.dragFrom[0], e.y_root - self.dragFrom[1]))
 
     def _wheel(self, e):
         '''마우스 휠: 포인터 아래에 있는 스크롤 영역만 움직임 (macOS/Windows 는 delta, 리눅스(Pi)는 Button-4/5).'''
