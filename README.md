@@ -95,6 +95,8 @@ aicar/              원본 aicar 코드 (수정하지 않고 사용)
   aicarA.ipynb      Colab GPU 학습 노트북
   ar.py             자율주행 + 서보모터 2개 키 조작 + YOLO 탐지
   yolo_detect.py    YOLO 동물·사람 탐지 스레드 (ar.py 에서 사용)
+  label.py          YOLO 라벨링 도구 (Pi 안에서 OpenCV 창으로 상자 그리기, --zip 으로 학습용 zip)
+  scenario.py       시나리오 시험 (시퀀스를 이어 순서대로 실행, 설정 창 시나리오 탭)
   settings.py       실험 설정값 (기본값 = docs/business-rules/parameters.md)
   settings_gui.py   설정과 실험 창 (tkinter). 저장하면 실행 중인 ar.py 에 바로 반영
   control.py        설정 창 ↔ ar.py 실험 명령, 상태 (runtime/ 파일)
@@ -156,6 +158,10 @@ python3 settings_gui.py
 
 # 6. 객체 탐지
 python3 od.py
+
+# 7. YOLO 라벨링과 학습 (자세한 순서는 docs/software/YOLO.md)
+python3 label.py          # gi.py 2번 모드로 찍은 yolo_raw/ 사진에 상자 그리기 (sudo 없이)
+python3 label.py --zip    # yolo_dataset.zip 생성 → Colab 에서 yolo/train/train_detect.ipynb 로 학습
 ```
 
 설정과 실험 창에서 바꾼 값은 `aicar/runtime/settings.json` 에 저장되고 git 에 올라가지 않습니다. 실험으로 찾은 좋은 값은 [parameters.md](docs/business-rules/parameters.md) 와 `aicar/settings.py` 기본값에 옮겨 적습니다. 주고받는 형식은 [인터페이스 명세 IF-12](docs/software/interfaces.md#if-12-설정-gui--arpy-후기반영) 참고.
