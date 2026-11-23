@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1264" height="770" viewBox="0 0 1264 770" role="img" aria-labelledby="title desc" font-family="Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="16" fill="#1D1D1F">
+  <title id="title">수집, 학습, 주행 사이의 인터페이스 경계</title>
+  <desc id="desc">Raspberry Pi의 gi.py와 dl.py가 주행 사진 zip과 YOLO 사진을 만들고, PC와 Colab에서 라벨링과 학습을 거쳐 모델 zip을 만든다. 모델 zip은 Pi의 ar.py가 읽는다. ar.py는 카메라 영상을 받고 탐지, 전원 확인, GPIO 부품과 연결된다. 서보 조준, 자극 출력, 이벤트 기록, 원격 조회 화면은 미반영 기능이다.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#86868B"/>
+    </marker>
+    <style>
+      .group { fill: #F5F5F7; }
+      .group-title { font-size: 20px; font-weight: 600; }
+      .box { fill: #FFFFFF; stroke: #D2D2D7; stroke-width: 1.5; }
+      .line { fill: none; stroke: #86868B; stroke-width: 1.5; }
+      .arrow { marker-end: url(#arrow); }
+      .planned { stroke-dasharray: 6 5; }
+      .secondary { fill: #6E6E73; }
+      .label { font-size: 14px; }
+      .note { font-size: 13px; fill: #6E6E73; }
+    </style>
+  </defs>
+  <rect width="1264" height="770" fill="#FFFFFF"/>
+
+  <!-- ===== 묶음 1: Raspberry Pi 수집 (x 24~344) ===== -->
+  <rect class="group" x="24" y="32" width="320" height="668" rx="12"/>
+  <text class="group-title" x="48" y="70">Raspberry Pi: 수집</text>
+
+  <!-- 카메라 → gi.py (IF-01) -->
+  <rect class="box" x="124" y="104" width="120" height="52" rx="12"/>
+  <text x="184" y="136" text-anchor="middle">카메라</text>
+  <path class="line arrow" d="M 184 156 V 196"/>
+  <text class="label secondary" x="194" y="181">IF-01</text>
+  <rect class="box" x="124" y="196" width="120" height="52" rx="12"/>
+  <text x="184" y="228" text-anchor="middle">gi.py</text>
+
+  <!-- gi.py → 주행 사진 (IF-02), gi.py → YOLO 사진 -->
+  <path class="line arrow" d="M 184 248 V 274 H 112 V 300"/>
+  <path class="line arrow" d="M 184 274 H 256 V 300"/>
+  <text class="label secondary" x="104" y="268" text-anchor="end">IF-02</text>
+  <rect class="box" x="48" y="300" width="128" height="52" rx="12"/>
+  <text x="112" y="322" text-anchor="middle">주행 사진</text>
+  <text class="note" x="112" y="342" text-anchor="middle">&lt;프로젝트&gt;/</text>
+  <rect class="box" x="192" y="300" width="128" height="52" rx="12"/>
+  <text x="256" y="322" text-anchor="middle">YOLO 사진</text>
+  <text class="note" x="256" y="342" text-anchor="middle">[P] 키, yolo_raw/</text>
+
+  <!-- 주행 사진 → dl.py zip -->
+  <path class="line arrow" d="M 112 352 V 404"/>
+  <rect class="box" x="48" y="404" width="128" height="52" rx="12"/>
+  <text x="112" y="426" text-anchor="middle">dl.py [Z]</text>
+  <text class="note" x="112" y="446" text-anchor="middle">&lt;프로젝트&gt;.zip</text>
+
+  <!-- ===== 묶음 2: PC, Colab 학습 (x 368~700) ===== -->
+  <rect class="group" x="368" y="32" width="332" height="668" rx="12"/>
+  <text class="group-title" x="392" y="70">PC, Colab: 라벨링, 학습</text>
+
+  <!-- YOLO 사진 → 라벨링 (PC) -->
+  <path class="line arrow" d="M 320 326 H 542"/>
+  <rect class="box" x="542" y="300" width="134" height="52" rx="12"/>
+  <text x="609" y="322" text-anchor="middle">라벨링 (PC)</text>
+  <text class="note" x="609" y="342" text-anchor="middle">yolo_dataset.zip</text>
+
+  <!-- dl.py zip → 1부 주행 CNN -->
+  <path class="line arrow" d="M 176 430 H 392"/>
+  <rect class="box" x="392" y="404" width="134" height="52" rx="12"/>
+  <text x="459" y="436" text-anchor="middle">1부 주행 CNN</text>
+
+  <!-- 라벨링 → 2부 YOLO -->
+  <path class="line arrow" d="M 609 352 V 404"/>
+  <rect class="box" x="542" y="404" width="134" height="52" rx="12"/>
+  <text x="609" y="436" text-anchor="middle">2부 YOLO</text>
+
+  <!-- 1부, 2부 → 모델 zip -->
+  <path class="line arrow" d="M 459 456 V 508"/>
+  <path class="line arrow" d="M 609 456 V 508"/>
+  <rect class="box" x="392" y="508" width="284" height="52" rx="12"/>
+  <text x="534" y="540" text-anchor="middle">&lt;프로젝트&gt;_models.zip</text>
+  <text class="note" x="534" y="590" text-anchor="middle">train_all.ipynb 3부에서 묶음</text>
+
+  <!-- ===== 묶음 3: Raspberry Pi 주행 (x 724~1240) ===== -->
+  <rect class="group" x="724" y="32" width="516" height="668" rx="12"/>
+  <text class="group-title" x="748" y="70">Raspberry Pi: 주행</text>
+
+  <!-- IF-03, IF-04: 모델 zip → ar.py -->
+  <path class="line arrow" d="M 676 534 H 748"/>
+  <text class="label secondary" x="712" y="508" text-anchor="middle">IF-03</text>
+  <text class="label secondary" x="712" y="524" text-anchor="middle">IF-04</text>
+
+  <!-- IF-01: 카메라 → ar.py -->
+  <rect class="box" x="748" y="104" width="120" height="52" rx="12"/>
+  <text x="808" y="136" text-anchor="middle">카메라</text>
+  <path class="line arrow" d="M 808 156 V 508"/>
+  <text class="label secondary" x="818" y="336">IF-01</text>
+
+  <!-- ar.py: 유일한 강조색 상자 -->
+  <rect x="748" y="508" width="120" height="52" rx="12" fill="#0071E3"/>
+  <text x="808" y="540" text-anchor="middle" fill="#FFFFFF" font-weight="600">ar.py</text>
+
+  <!-- 지금 있는 출력의 공통 연결선 (x 912) -->
+  <path class="line" d="M 868 520 H 912 V 130"/>
+  <!-- IF-05 -->
+  <path class="line arrow" d="M 912 130 H 984"/>
+  <text class="label secondary" x="948" y="120" text-anchor="middle">IF-05</text>
+  <rect class="box" x="984" y="104" width="232" height="52" rx="12"/>
+  <text x="1100" y="136" text-anchor="middle">yolo_detect.py (탐지)</text>
+  <!-- IF-06 -->
+  <path class="line arrow" d="M 912 214 H 984"/>
+  <text class="label secondary" x="948" y="204" text-anchor="middle">IF-06</text>
+  <rect class="box" x="984" y="188" width="232" height="52" rx="12"/>
+  <text x="1100" y="220" text-anchor="middle">power_check.py (전원)</text>
+  <!-- IF-07 -->
+  <path class="line arrow" d="M 912 298 H 984"/>
+  <text class="label secondary" x="948" y="288" text-anchor="middle">IF-07</text>
+  <rect class="box" x="984" y="272" width="232" height="52" rx="12"/>
+  <text x="1100" y="294" text-anchor="middle">GPIO 부품</text>
+  <text class="note" x="1100" y="314" text-anchor="middle">모터, 서보, 램프, 거리센서</text>
+
+  <!-- 미반영 출력의 공통 연결선 (x 928) -->
+  <path class="line planned" d="M 868 548 H 928 M 928 382 V 550"/>
+  <!-- IF-08 -->
+  <path class="line arrow planned" d="M 928 382 H 984"/>
+  <text class="label secondary" x="956" y="372" text-anchor="middle">IF-08</text>
+  <rect class="box planned" x="984" y="356" width="232" height="52" rx="12"/>
+  <text class="secondary" x="1100" y="378" text-anchor="middle">서보 조준</text>
+  <text class="note" x="1100" y="398" text-anchor="middle">미반영</text>
+  <!-- IF-09 -->
+  <path class="line arrow planned" d="M 928 466 H 984"/>
+  <text class="label secondary" x="956" y="456" text-anchor="middle">IF-09</text>
+  <rect class="box planned" x="984" y="440" width="232" height="52" rx="12"/>
+  <text class="secondary" x="1100" y="462" text-anchor="middle">자극 출력</text>
+  <text class="note" x="1100" y="482" text-anchor="middle">미반영</text>
+  <!-- IF-10 -->
+  <path class="line arrow planned" d="M 928 550 H 984"/>
+  <text class="label secondary" x="956" y="540" text-anchor="middle">IF-10</text>
+  <rect class="box planned" x="984" y="524" width="232" height="52" rx="12"/>
+  <text class="secondary" x="1100" y="546" text-anchor="middle">이벤트 기록</text>
+  <text class="note" x="1100" y="566" text-anchor="middle">미반영</text>
+  <!-- IF-11 -->
+  <path class="line arrow planned" d="M 1100 576 V 616"/>
+  <text class="label secondary" x="1110" y="601">IF-11</text>
+  <rect class="box planned" x="984" y="616" width="232" height="52" rx="12"/>
+  <text class="secondary" x="1100" y="638" text-anchor="middle">원격 조회 화면</text>
+  <text class="note" x="1100" y="658" text-anchor="middle">미반영</text>
+
+  <!-- 범례 -->
+  <path class="line" d="M 48 740 H 96"/>
+  <path class="line planned" d="M 112 740 H 160"/>
+  <text class="label secondary" x="176" y="745">실선 = 지금 있음, 점선 = 미반영</text>
+</svg>
