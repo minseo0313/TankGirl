@@ -2,7 +2,7 @@
 #
 # <stimulus.py>  기피 자극 출력 (IF-09, 규칙 STIM-01 ~ STIM-02, SAFE-06)
 #
-# 종류: sound_a (음향 A), sound_b (음향 B), sound_led (음향 A + LED 깜빡임)
+# 종류: sound_a (음향 A), sound_b (음향 B), sound_led (음향 A + LED 깜빡임), led (LED 깜빡임만, 소리 없음)
 # 소리는 SOUND_PLAYER(aplay 등)로 파일을 재생하고, sec 초가 지나면 스스로 끕니다.
 # 소리 파일이 sec 보다 짧으면 파일 길이만큼만 납니다.
 # 장애물 경고 경적(부저, GPIO 23)은 자극이 아니므로 여기서 다루지 않습니다.
@@ -14,7 +14,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-KINDS = ('sound_a', 'sound_b', 'sound_led')
+KINDS = ('sound_a', 'sound_b', 'sound_led', 'led')
 # 다른 장치가 쓰는 핀 (README GPIO 표, 서보 17·27, I²C 2·3). 18·10 은 NEOPIXEL.py 설정을 확인하기 전이라 막아 둠
 RESERVED_PINS = {2, 3, 5, 6, 10, 12, 13, 17, 18, 20, 21, 23, 24, 25, 26, 27}
 
@@ -62,6 +62,8 @@ class Stimulus:
             print('[자극 오류] 모르는 종류: %r (%s 중 하나)' % (kind, ', '.join(KINDS)))
             return False
         self.stop()
+        if kind == 'led':
+            return self._startLedOnly(sec, s)
         path = self._soundPath(kind, s)
         if path is None:
             print('[자극 오류] 소리 파일은 aicar/sounds/ 안에 두어야 합니다 (설정 SOUND_A_FILE / SOUND_B_FILE)')
@@ -86,6 +88,23 @@ class Stimulus:
             self.timer.daemon = True
             self.timer.start()
         print('[자극] %s %.1f초' % (kind, sec))
+        return True
+
+    def _startLedOnly(self, sec, s):
+        '''LED 만 sec 초 깜빡입니다. LED_PIN 이 '사용 안 함'이거나 LED 를 못 열면 False.'''
+        if not s['LED_PIN']:
+            print('[자극 오류] LED 핀이 "사용 안 함"입니다 (설정 GUI 자극 탭 LED_PIN)')
+            return False
+        with self.lock:
+            led = self._getLed(s['LED_PIN'])
+            if led is None:
+                return False
+            led.blink(on_time=s['LED_BLINK_SEC'], off_time=s['LED_BLINK_SEC'])
+            self.kind = 'led'
+            self.timer = threading.Timer(sec, self.stop)
+            self.timer.daemon = True
+            self.timer.start()
+        print('[자극] led %.1f초' % sec)
         return True
 
     def stop(self):
@@ -158,6 +177,11 @@ if __name__ == '__main__':
         assert not st.active() and procs[1].terminated         # 시간이 지나면 스스로 꺼짐
         st.start('sound_led', 1, dict(s, LED_PIN=23))          # 부저 핀 → LED 없이 소리만
         assert len(leds) == 1
+        n = len(procs)
+        assert st.start('led', 0.1, s) and st.active() and leds[0].state == 'blink' and len(procs) == n   # 소리 없이 LED 만
+        time.sleep(0.3)
+        assert not st.active() and leds[0].state == 'off'      # 시간이 지나면 LED 도 꺼짐
+        assert st.start('led', 1, dict(s, LED_PIN=0)) is False  # LED 핀 사용 안 함
         st.close()
         assert leds[0].state == 'closed'
     print('stimulus 자체 점검 통과')
