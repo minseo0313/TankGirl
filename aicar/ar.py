@@ -246,6 +246,8 @@ STATUS_PERIOD = 1.0                   # 상태 파일 쓰는 간격 (초)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 eventServer = None                    # 원격 조회 서버 (EVENT_SERVER_ON 일 때 __main__ 에서 켬)
 scenarioRun = None                    # 실행 중(또는 마지막) 시나리오 (scenario.Player)
+scenarioHorn = False                  # 시나리오가 켠 부저([H] 경적과 같은 GPIO 23)
+scenarioLamp = False                  # 시나리오가 켠 전조등([L] 과 같은 네오픽셀)
 # 서보 키 (숫자열, 숫자 키패드, 소문자). 누르면 자동 조준을 MANUAL_OVERRIDE_SEC 동안 쉼 (AIM-06)
 SERVO_MANUAL_KEYS = {ord(c) for c in '123450qwert'} | {0x80 + ord(c) for c in '123450'}
 
@@ -282,7 +284,14 @@ def applySettings(s):
 
 def runScenarioActions(actions, frame):
     '''scenario.py 할 일 실행.'''
+    global scenarioHorn, scenarioLamp
     for act in actions:
+        if act[0] == 'horn':                  # 부저: 메인 루프의 경적 칸에서 켜고 끔
+            scenarioHorn = act[1] == 'on'
+            continue
+        if act[0] == 'lamp':                  # 전조등: 메인 루프의 전조등 칸에서 켜고 끔
+            scenarioLamp = act[1] == 'on'
+            continue
         if act[0] == 'aim':                   # 그 위치 쪽으로 한 번에 (자동 조준처럼 10도씩 나누지 않음)
             box = (act[1] - 20, act[2] - 20, act[1] + 20, act[2] + 20)
             aimer.moveTo(*aim.computeAim(box, aimer.getAngles(), dict(SETTINGS, AIM_MAX_STEP_DEG=180)), SETTINGS)
@@ -600,7 +609,7 @@ def reportError(e):
 #============================================================================================
 def main():
 
-    global lightMode, lightCar
+    global lightMode, lightCar, scenarioHorn, scenarioLamp
 
     # 상수 값 설정
     RESTART_NUM = 33             # Red 신호 유지 시간(frame단위)
@@ -640,7 +649,8 @@ def main():
             print('[설정] 바뀐 값을 반영했습니다')
         if GPIO.input(LIGHT_SENSOR): CDS = 'NIGHT'     # 빛 감지 센서 
         else: CDS = 'DAY'
-        if lightMode == 'AUTO' and CDS == 'NIGHT': nx.lamp(255,255,255)  # 전조등 자동 On
+        if scenarioLamp: nx.lamp(255,255,255)          # 시나리오가 켠 전조등이 먼저
+        elif lightMode == 'AUTO' and CDS == 'NIGHT': nx.lamp(255,255,255)  # 전조등 자동 On
         elif lightCar == 'ON':  nx.lamp(255,255,255)   # 전조등 수동 On
         elif lightCar == 'POLICE 1': nx.policeCar1()   # Police Car 1
         elif lightCar == 'POLICE 2': nx.policeCar2()   # Police Car 2
@@ -650,9 +660,9 @@ def main():
         elif lightCar == 'PATROL': nx.patrol()         # Patrol Car
         elif lightCar == 'OFF' or lightCar == ' ': nx.lamp(0,0,0)        # 전조등 Off
         # 경적 -------------------------------------------------------------------------------
-        if horn: 
+        if horn or scenarioHorn:                       # 시나리오가 켠 부저도 여기서 울림
             GPIO.output(BUZZER,GPIO.HIGH)
-            horn -= 1                                  # 경적 유지 시간 감소
+            if horn: horn -= 1                         # 경적 유지 시간 감소
         else: 
             GPIO.output(BUZZER,GPIO.LOW)               # 경적 끄기
         # 카메라로 부터 1 프레임 영상 가져오기 ---------------------------------------------------
@@ -764,7 +774,9 @@ def main():
             if target is not None:
                 aimer.aimAt(target, SETTINGS)
         # 시나리오 시험: 바퀴는 세우고 순서대로 실행 (탐지가 꺼져 있어도 진행). 탐지가 켜져 있고 사람이 보이면 중지 ----
-        if scenarioRun is not None and not scenarioRun.done:
+        if scenarioRun is None or scenarioRun.done:
+            scenarioHorn = scenarioLamp = False          # 끝나거나 멈추면 부저, 전조등을 반드시 끔
+        else:
             autoRun = False; preKey = ord(' '); mL = 0; mR = 0
             if personSeen:
                 runScenarioActions(scenarioRun.stop(startCycle, '사람이 보임 (SAFE-06)'), frame)

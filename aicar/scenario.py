@@ -13,6 +13,7 @@
 #   ('servo_to', 위아래, 좌우)  그 각도로 (도),  ('servo_by', 위아래, 좌우)  지금 각도에서 그만큼 더 (도, +/-)
 #   ('sweep', 시작, 끝)  좌우 서보(2번)를 단계 시간 동안 시작 각도에서 끝 각도로 천천히 (한 번에 튀지 않게)
 #                     둘 다 ar.py 가 설정의 서보 범위(AIM_TILT_MIN/MAX 등)로 잘라서 보냅니다
+#   ('horn', on/off)  차의 부저 켜기/끄기 (ar.py [H] 경적과 같은 부저),  ('lamp', on/off) 전조등 켜기/끄기 ([L] 네오픽셀)
 #   ('stim', kind)    자극 켜기 (sound_a 음향 A, sound_b 음향 B, sound_led 음향과 LED),  ('stim_stop',) 끄기
 #   ('log', result)   기록 (left 이탈, stayed 잔류, unknown 관찰 불가, uncertain 불확실, person_stop 사람으로 중지)
 # 실행 중 실제 탐지에 사람이 보이거나, 탐지가 멈추거나, [Space] / [중지] 를 누르면 ar.py 가 바로 멈춥니다.
@@ -38,7 +39,8 @@ ANGLE_LABELS = {'servo_to': ('위아래', '좌우'), 'servo_by': ('위아래', '
 ACTIONS = {'wait': ('기다리기', None), 'photo': ('사진 찍기', None), 'aim': ('대상 쪽으로 조준', None),
            'servo_to': ('서보 각도로', ANGLES), 'servo_by': ('서보 돌리기', ANGLES), 'sweep': ('서보 좌우로 쓸기', ANGLES),
            'center': ('서보 가운데', None), 'hold': ('서보 멈춤', None), 'stim': ('자극 켜기', KINDS),
-           'stim_stop': ('자극 끄기', None), 'log': ('기록', RESULTS)}
+           'stim_stop': ('자극 끄기', None), 'log': ('기록', RESULTS),
+           'horn': ('부저 (경적)', ('on', 'off')), 'lamp': ('전조등 (LED)', ('on', 'off'))}
 
 # 시퀀스: 이름 → (큰 동작, [세부 단계]) ------------------------------------------------------
 # 쓰는 부품: 서보(카메라 방향), 스피커(빵 소리), LED. 바퀴는 시나리오 동안 세워 둠. 거리센서는 아직 안 씀
@@ -50,8 +52,10 @@ SEQUENCES = {
     'found':  ('카메라에 잡힌다', [
         ('카메라에 {name}가 잡힘, 서보 멈춤', None, 0.3)]),
     'scare':  ('빵 소리와 LED 를 함께 켠다', [
-        ('빵 소리 + LED 깜빡임', ('stim', 'sound_led'), 3),
-        ('소리, LED 끄기', ('stim_stop',), 0)]),
+        ('전조등 켜기', ('lamp', 'on'), 0),
+        ('부저 빵', ('horn', 'on'), 0.5),
+        ('부저 끄기', ('horn', 'off'), 2.5),
+        ('전조등 끄기', ('lamp', 'off'), 0)]),
     'return': ('가운데로 돌아온다', [
         ('서보 가운데', ('center',), 1.5)]),
 }
@@ -180,7 +184,7 @@ class Player:
             return []
         self.done, self.sweep = True, None
         self.history.append('%5.1f초 중지: %s' % (now - self.start, why))
-        return [('stim_stop',), ('hold',)]
+        return [('stim_stop',), ('horn', 'off'), ('lamp', 'off'), ('hold',)]
 
     def status(self, now=None):
         '''GUI 에 보여 줄 지금 단계: seq(몇 번째 시퀀스, 0부터), step(지금 세부 단계 설명),
@@ -236,8 +240,10 @@ if __name__ == '__main__':
     pans = [a[1] for a in acts if a[0] == 'servo_pan']
     assert acts[0] == ('servo_to', 90, 45) and pans[0] == 45 and pans[-1] == 120
     assert pans == sorted(pans) and len(pans) > 20                      # 한 번에 튀지 않고 조금씩
-    kinds = [a[0] for a in acts if a[0] != 'servo_pan']
-    assert kinds == ['servo_to', 'stim', 'stim_stop', 'center'] and ('stim', 'sound_led') in acts, kinds
+    kinds = [a if a[0] in ('horn', 'lamp') else a[0] for a in acts if a[0] != 'servo_pan']
+    assert kinds == ['servo_to', ('lamp', 'on'), ('horn', 'on'), ('horn', 'off'), ('lamp', 'off'), 'center'], kinds
+    lastPan = max(i for i, a in enumerate(acts) if a[0] == 'servo_pan')
+    assert acts.index(('lamp', 'on')) > lastPan and acts.index(('horn', 'on')) > lastPan     # 서보 쓸기가 끝난 뒤 빵 + 전조등
     p = Player('S-02', 0.0)
     p.step(0.0)
     assert p.status()['seq'] == 0 and p.status()['step'] == '서보를 왼쪽으로'
@@ -246,7 +252,8 @@ if __name__ == '__main__':
     p.step(0.5); p.step(2.6)
     st = p.status()
     assert st['seq'] == 1 and st['sequence'] == '2/4 카메라에 잡힌다' and st['step'] == '카메라에 노루가 잡힘, 서보 멈춤'
-    assert p.stop(4.5, '[Space]') == [('stim_stop',), ('hold',)] and p.step(99) == [] and p.stop(5, 'x') == []
+    assert p.stop(4.5, '[Space]') == [('stim_stop',), ('horn', 'off'), ('lamp', 'off'), ('hold',)]   # 멈추면 모두 끔
+    assert p.step(99) == [] and p.stop(5, 'x') == []
     assert outline('S-02')[1] == ('카메라에 잡힌다', ['카메라에 노루가 잡힘, 서보 멈춤'])
     try:
         Player('S-11', 0)

@@ -254,7 +254,7 @@ class SettingsApp:
             self.msg.config(text='기본값으로 바꿈 (아직 저장 안 함)')
 
     # 시나리오 탭: 왼쪽 시나리오 목록, 가운데 시퀀스(큰 동작)와 세부 단계를 바로 고침, 오른쪽 진행 로그 --------
-    VALUE_LABELS = {'sound_a': '음향 A (빵)', 'sound_b': '음향 B', 'sound_led': '소리와 LED', 'led': 'LED만', **RESULT_LABELS}
+    VALUE_LABELS = {'sound_a': '음향 A (빵)', 'sound_b': '음향 B', 'sound_led': '소리와 LED', 'led': 'LED만', 'on': '켜기', 'off': '끄기', **RESULT_LABELS}
     ANGLE_DEFAULTS = {'servo_to': (90, 90), 'servo_by': (0, 0), 'sweep': (45, 120)}   # 동작을 처음 고를 때 넣는 각도
     ACCENT = '#0A84FF'                                               # 지금 단계 표시
     HINT = '#8E8E93'
