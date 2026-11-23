@@ -3,7 +3,7 @@
 # <scenario.py>  시나리오 시험: 시퀀스를 이어서 정해진 순서대로 실행 (docs/scenarios/scenarios.md)
 #
 # 시나리오 = 시퀀스(큰 동작, 예: "동물을 탐지한다")를 순서대로 이은 것
-# 시퀀스   = 세부 단계(예: "카메라에 노루가 나타난다", "사진을 찍는다", "빵 소리를 낸다")의 목록
+# 시퀀스   = 세부 단계(예: "사진 찍기", "서보를 동물 쪽으로", "스피커: 빵 소리")의 목록
 # 단계     = (설명, 동작, 다음 단계까지 기다리는 초). 설명의 {name} 은 시나리오 대상 이름으로 바뀝니다.
 #
 # 동작은 ar.py 가 실행합니다. None 이면 기다리기만 합니다 (탐지는 아직 AI 없이 "나타났다고 봄").
@@ -40,66 +40,44 @@ ACTIONS = {'wait': ('기다리기', None), 'photo': ('사진 찍기', None), 'ai
 
 # 시퀀스: 이름 → (큰 동작, [세부 단계]) ------------------------------------------------------
 # 쓰는 부품: 서보(카메라 방향), 스피커(빵 소리), LED, 바퀴(시나리오 동안 세워 둠). 거리센서는 아직 안 씀
+# 탐지는 아직 하지 않고 "동물이 있다"고 보고 기능을 규칙 순서대로 실행합니다.
 SEQUENCES = {
     'stop':     ('멈춘다', [
-        ('바퀴를 세우고 카메라(서보)를 가운데로', ('center',), 1.5)]),
-    'look':     ('주변을 살핀다', [
-        ('5초 동안 카메라로 본다', None, 5),
-        ('아무것도 없다', None, 0)]),
+        ('바퀴 정지, 서보 가운데', ('center',), 1.5)]),
     'detect':   ('동물을 탐지한다', [
-        ('카메라에 {name}가 나타난다', None, 1),
-        ('1초 동안 계속 보여 {name}로 확정한다', None, 0),
-        ('사진을 찍는다', ('photo',), 0)]),
+        ('{name} 탐지 (있다고 봄)', None, 1),
+        ('사진 찍기', ('photo',), 0)]),
     'aim':      ('카메라를 동물 쪽으로 돌린다', [
-        ('서보를 {name} 쪽으로 돌린다', ('aim',), 2)]),
+        ('서보를 {name} 쪽으로', ('aim',), 2)]),
     'bang':     ('빵 소리를 낸다', [
-        ('스피커로 빵 소리 (음향 A)', ('stim', 'sound_a'), 1.5)]),
+        ('스피커: 빵 소리 (음향 A)', ('stim', 'sound_a'), 1.5)]),
     'led':      ('LED 를 켠다', [
-        ('LED 를 깜빡인다', ('stim', 'led'), 3),
-        ('LED 를 끈다', ('stim_stop',), 0)]),
-    'bang_led': ('소리와 LED 를 함께 낸다 (더 세게)', [
-        ('빵 소리와 LED 깜빡임을 함께', ('stim', 'sound_led'), 3),
-        ('소리와 LED 를 끈다', ('stim_stop',), 0)]),
-    'person':   ('사람을 본다', [
-        ('카메라에 사람이 나타난다', None, 0),
-        ('사진을 찍는다', ('photo',), 0),
-        ('서보를 멈추고 소리, LED 를 내지 않는다', ('hold',), 3),
-        ('사람이 사라진다', None, 0)]),
-    'cut_person': ('사람이 끼어든다', [
-        ('소리를 내는 중에 사람이 들어온다', None, 0),
-        ('소리와 LED 를 바로 끈다', ('stim_stop',), 0),
-        ('서보를 멈춘다', ('hold',), 3)]),
-    'watch_left': ('다시 지켜본다', [
-        ('1초 쉰다 (카메라 고정)', None, 1),
-        ('{name}가 화면 밖으로 나간다', None, 2),
-        ('3초 더 봐도 다시 안 보인다 → 떠남', None, 3)]),
-    'watch_stay': ('다시 지켜본다', [
-        ('1초 쉰다 (카메라 고정)', None, 1),
-        ('5초 동안 {name}가 그대로 있다 → 안 떠남', None, 5)]),
+        ('LED 깜빡임', ('stim', 'led'), 3),
+        ('LED 끄기', ('stim_stop',), 0)]),
+    'bang_led': ('소리와 LED 를 함께 낸다', [
+        ('빵 소리 + LED 깜빡임', ('stim', 'sound_led'), 3),
+        ('소리, LED 끄기', ('stim_stop',), 0)]),
+    'wait':     ('지켜본다', [
+        ('5초 기다림 (서보 고정)', None, 5)]),
     'return':   ('복귀한다', [
-        ('카메라(서보)를 가운데로', ('center',), 1.5),
-        ('순찰을 다시 시작한다 (주행은 ar.py [G])', None, 0)]),
+        ('서보 가운데', ('center',), 1.5)]),
 }
 RESULT_NAMES = {'left': '이탈', 'stayed': '잔류, 확인 필요', 'unknown': '관찰 불가',
                 'uncertain': '불확실', 'person_stop': '사람으로 중지'}
 for _r, _label in RESULT_NAMES.items():                     # 'log_left' 등: 기록한다
-    SEQUENCES['log_' + _r] = ('기록한다', [('%s (사진과 함께)' % _label, ('log', _r), 0)])
+    SEQUENCES['log_' + _r] = ('기록한다', [('기록: %s (사진과 함께)' % _label, ('log', _r), 0)])
 
 # 시나리오: 번호 → (제목, 대상, [시퀀스 순서]) ---------------------------------------------------
 # 대상: name 표시 이름, species 기록 종류, x, y 화면 위치 (카메라 640x480), zone 구역 (None = 미정)
 DEER = {'name': '노루', 'species': 'roe_deer', 'x': 480, 'y': 120, 'zone': 2}
 SCENARIOS = {
-    'S-02': ('동물이 나타나 빵 소리와 LED 로 쫓음', DEER,
-             ['stop', 'detect', 'aim', 'bang', 'led', 'watch_left', 'log_left', 'return']),
-    'S-03': ('동물이 떠나지 않아 한 번 더 (소리+LED)', dict(DEER, x=320, y=240),
-             ['stop', 'detect', 'aim', 'bang', 'led', 'watch_stay', 'aim', 'bang_led', 'watch_stay', 'log_stayed', 'return']),
-    'S-07': ('쫓는 도중 사람이 나타남', DEER,
-             ['stop', 'detect', 'aim', 'bang', 'cut_person', 'log_person_stop', 'return']),
-    'S-05': ('사람만 나타남', dict(DEER, name='사람', species='person', zone=1),
-             ['stop', 'person', 'log_person_stop', 'return']),
-    'S-01': ('아무것도 없음', DEER, ['stop', 'look', 'return']),
+    'S-02': ('동물 탐지 → 빵 소리 → LED', DEER,
+             ['stop', 'detect', 'aim', 'bang', 'led', 'wait', 'log_left', 'return']),
+    'S-03': ('한 번 더 대응 (소리와 LED 함께)', dict(DEER, x=320, y=240),
+             ['stop', 'detect', 'aim', 'bang', 'led', 'wait', 'aim', 'bang_led', 'wait', 'log_stayed', 'return']),
+    'S-01': ('탐지 없음 → 그대로 복귀', DEER, ['stop', 'wait', 'return']),
 }
-# 거리센서가 필요한 시나리오(S-11, S-12)와 그 밖의 시나리오는 docs/scenarios/scenarios.md 에만 있습니다
+# 그 밖의 시나리오(사람, 장애물 등)는 docs/scenarios/scenarios.md 에만 있습니다
 
 # 편집한 시퀀스 읽고 쓰기 ----------------------------------------------------------------------
 def checkStep(step):
@@ -258,8 +236,7 @@ if __name__ == '__main__':
     p.step(1.5)
     assert p.status()['sequence'] == '2/8 동물을 탐지한다'                  # 다음 시퀀스로 이어짐
     assert p.stop(2.0, '사람') == [('stim_stop',), ('hold',)] and p.step(99) == [] and p.stop(3, 'x') == []
-    assert outline('S-02')[1] == ('동물을 탐지한다', ['카메라에 노루가 나타난다', '1초 동안 계속 보여 노루로 확정한다',
-                                                   '사진을 찍는다'])
+    assert outline('S-02')[1] == ('동물을 탐지한다', ['노루 탐지 (있다고 봄)', '사진 찍기'])
     try:
         Player('S-11', 0)
         raise AssertionError('S-11 은 키보드 시험')
