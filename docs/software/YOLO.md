@@ -5,7 +5,7 @@
 기존 `aicar/od.py`(COCO SSD)에는 노루·멧돼지 클래스가 없어 따로 학습합니다.
 
 ```
-[Pi]    gi.py wayA      운전하며 주행 사진(자동) + YOLO 사진([P] 키 → aicar/yolo_raw/<날짜>/)
+[Pi]    gi.py wayA      시작할 때 모드 선택: 1 주행 사진(차선 영역) / 2 YOLO 사진(원본 → aicar/yolo_raw/<날짜>/)
 [Pi]    dl.py wayA      주행 사진 정리 → [Z] wayA.zip
 [PC]    라벨링          yolo_raw 사진에 박스 → yolo_dataset.zip
 [Colab] train_all.ipynb wayA.zip + yolo_dataset.zip → wayA_models.zip
@@ -14,7 +14,7 @@
 
 | 파일 | 내용 |
 |------|------|
-| `aicar/gi.py` | `[P]`: YOLO 라벨링용 원본 사진(640x480) 저장 |
+| `aicar/gi.py` | 시작할 때 수집 모드 선택. 2 객체 탐지: YOLO 라벨링용 원본 사진(640x480) 저장 |
 | `yolo/train/train_all.ipynb` | 1부 주행 CNN(`aicarA.ipynb` 그대로) + 2부 YOLO 학습·평가·NCNN 변환 + 3부 결과 zip |
 | `yolo/train/data.yaml` | YOLO 클래스 순서 (라벨링 도구에서도 이 순서로) |
 | `aicar/yolo_detect.py` | 탐지 스레드 (`ar.py` 가 사용) |
@@ -26,12 +26,15 @@
 
 ```
 cd ~/aicar
-python3 gi.py wayA
+sudo python3 gi.py        # 시작하면 "2. 객체 탐지 이미지 수집" 을 고름 (프로젝트 이름 없어도 됨)
 ```
 
-- 평소처럼 운전하면 주행 사진은 `wayA/` 에 저장됩니다.
-- 노루·멧돼지 모형이나 사람이 화면에 보일 때 `[P]` 를 누르면 `yolo_raw/<날짜>/<시각>.jpg` 로 저장됩니다.
-- 낮·밤(IR), 가까이·멀리, 여러 각도로 고르게 모읍니다.
+- 주행 사진(1번 모드)은 차선 영역만 잘라 200x66 으로 줄인 것이라 탐지 학습에 쓸 수 없습니다. 탐지용은 반드시 2번 모드로 찍습니다.
+- 2번 모드는 카메라 화면 전체(640x480)를 `yolo_raw/<날짜>/<시각>.jpg` 로 저장합니다. 화면에 차선 사각형은 나오지 않습니다.
+  - `[P]` 또는 마우스 가운데 버튼: 1장
+  - 마우스 왼쪽 버튼(녹화): 1초마다 1장 (`DETECT_SHOT_SEC`), 오른쪽 버튼: 멈춤
+- 노루·멧돼지 모형이나 사람이 화면에 보일 때 찍습니다. 낮·밤(IR), 가까이·멀리, 여러 각도로 고르게 모읍니다.
+- 끝나면 터미널에 저장한 장수가 나오고, 사진 소유자를 원래 사용자로 돌려 둡니다.
 
 ## 2. 라벨링 (PC)
 

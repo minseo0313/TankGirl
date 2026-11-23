@@ -162,9 +162,11 @@
 #           이동 후 SERVO_HOLD_SEC 초가 지나면 신호를 끊어 그 자리에서 힘을 풉니다.
 #           [0] 두 서보모터 모두 정지
 #
-#     (20) [P]:
-#           YOLO 탐지 학습용 원본 카메라 사진(640x480)을 yolo_raw/<날짜>/ 에 저장합니다.
-#           노루·멧돼지 모형이나 사람이 화면에 보일 때 누릅니다. 라벨링 후 yolo/train/train_all.ipynb 로 학습합니다.
+#     (20) 수집 모드 (시작할 때 터미널에서 1 또는 2 를 고름):
+#           1. 주행 이미지 수집: 차선 영역(사각형)만 잘라 200x66 으로 <프로젝트>/ 에 저장 (자율주행 CNN 학습용, 원래 기능)
+#           2. 객체 탐지 이미지 수집: 카메라 원본 640x480 을 yolo_raw/<날짜>/ 에 저장 (YOLO 라벨링용)
+#              [P] 또는 마우스 가운데 버튼 = 1장, 마우스 왼쪽 버튼(녹화) = DETECT_SHOT_SEC 마다 1장, 오른쪽 버튼 = 멈춤
+#              노루·멧돼지 모형이나 사람이 화면에 보일 때 찍습니다. 라벨링 후 yolo/train/train_all.ipynb 로 학습합니다.
 #
 # F. 프로그램 종료시 pickle 에 저장되는 데이터
 #
@@ -214,6 +216,9 @@ recUnitTime = 100000000     # 가변 이미지 수집 모드에서 이미지 저
 recordOn = False            # 이미지 연속 녹화 상태 / mouseCtrlState 가 True이고 마우스 왼쪽 버튼에 의하여 True가 된다.
 oneShot = False             # 단일(One Shoot) 이미지 촬영
 mouseCtrlState = False      # 마우스에 의한 차량 주행및 조향 제어 상태 (True:제어 가능)
+COLLECT_MODE = 'drive'      # 수집 모드: 'drive' 주행(차선 영역 200x66) / 'detect' 객체 탐지(원본 640x480). 시작할 때 고름
+DETECT_SHOT_SEC = 1.0       # 객체 탐지 모드 연속 촬영 간격 (초): 거의 같은 사진이 너무 많이 쌓이지 않게
+yoloCount = 0               # 이번 실행에서 저장한 객체 탐지 사진 수
 REC_LOW_FORWARD_SPEED = 40  # 가변 차량속도/촬영시간 모드에서 녹화시 최저 모터 속도 (PWM 값)
 recTimeList = [recUnitTime*1,recUnitTime*2,recUnitTime*3,recUnitTime*4,
                recUnitTime*5,recUnitTime*6,recUnitTime*7,recUnitTime*8,
@@ -472,15 +477,30 @@ def servoSweepStep(servo, name):
 YOLO_RAW_DIR = 'yolo_raw'             # YOLO 라벨링용 원본 사진 저장 폴더 (aicar/yolo_raw/<날짜>/)
 
 def saveYoloShot(frame):
-    '''[P] 키: 화면 표시가 그려지기 전의 카메라 원본(640x480)을 YOLO 라벨링용으로 저장합니다.'''
+    '''객체 탐지 모드: 화면 표시가 그려지기 전의 카메라 원본(640x480)을 YOLO 라벨링용으로 저장합니다.'''
+    global yoloCount
     d = os.path.join(YOLO_RAW_DIR, time.strftime('%Y%m%d'))
     os.makedirs(d, exist_ok=True)
     t = time.time()
     path = os.path.join(d, time.strftime('%H%M%S', time.localtime(t)) + '_%03d.jpg' % (int(t * 1000) % 1000))
     if cv.imwrite(path, frame):
+        yoloCount += 1
         print('[YOLO 사진] 저장: %s' % path)
     else:
         print('[YOLO 사진 오류] 저장 실패: %s (저장 공간·폴더 권한 확인)' % path)
+def chooseMode():
+    '''시작할 때 수집 모드를 고릅니다. 터미널 입력이 없으면(예: 자동 실행) 원래 기능인 주행 수집.'''
+    print('수집 모드를 고르세요')
+    print('  1. 주행 이미지 수집      : 차선 영역(사각형)만 잘라 200x66 → <프로젝트>/  (자율주행 CNN 학습용)')
+    print('  2. 객체 탐지 이미지 수집 : 카메라 원본 640x480 → yolo_raw/<날짜>/   (YOLO 라벨링용)')
+    while True:
+        try:
+            b = input('번호 (1/2): ').strip()
+        except EOFError:
+            return 'drive'
+        if b in ('1', '2'):
+            return 'drive' if b == '1' else 'detect'
+        print('1 또는 2 를 입력하세요')
 # Mouse Callback Function -------------------------------------------------------------------
 def controlMain(event,x,y,flags,param):
     '''
@@ -508,7 +528,7 @@ def controlMain(event,x,y,flags,param):
             mouseCtrlState = True      # 마우스 왼쪽 클릭에서 마우스 조정 주행상태 수동 조작에 의하여 False 가 된다.
             cursorColor = GREEN        # 조향 커서키, 모터PWM 막대 그래프 색상
         else:
-            if DIRECTORY_FLAG:         # 이미지 저장용 디렉토리 상태(True:디렉토리 있음)
+            if DIRECTORY_FLAG or COLLECT_MODE == 'detect':   # 주행: 저장 폴더가 있을 때, 객체 탐지: 항상 (yolo_raw/)
                 recordOn = True        # 이미지 레코딩 가능
                 cursorColor = RED      # 조향 커서키, 모터 PWM 막대 그래프 색상
 
@@ -564,8 +584,9 @@ def main():
         roadImg = cv.cvtColor(roadImg, cv.COLOR_BGR2YUV)      # RGB를 YUV 좌표계로 변환
         roadImg = cv.GaussianBlur(roadImg, (3,3), 0)          # 가우시안법 노이즈 제거
         #------------------------------------------------------------------------------------
-        cv.rectangle(viewWin,(80+WIN_XL,WIN_YU),(80+WIN_XR,WIN_YD),CYAN,1) # 딥러닝 영역 박스처리
-        viewWin[WIN_YD-WIN_GAP_Y:WIN_YD-WIN_GAP_Y+1,80+WIN_XL:80+WIN_XR:4]=CYAN
+        if COLLECT_MODE == 'drive':    # 차선 영역 사각형은 주행 수집에서만 (객체 탐지는 화면 전체를 씀)
+            cv.rectangle(viewWin,(80+WIN_XL,WIN_YU),(80+WIN_XR,WIN_YD),CYAN,1) # 딥러닝 영역 박스처리
+            viewWin[WIN_YD-WIN_GAP_Y:WIN_YD-WIN_GAP_Y+1,80+WIN_XL:80+WIN_XR:4]=CYAN
         #------------------------------------------------------------------------------------
         angle = int(mouseX-(80+320))    # 중앙을 0 으로 왼쪽을 - 값, 오른쪽을 + 값으로 각도 값 정의
         s = int(angle*defMotorAngle)
@@ -633,7 +654,14 @@ def main():
         if MENU_VIEW:
             cv.putText(viewWin,f'{w}{v}',(80+250, 93),cv.FONT_HERSHEY_COMPLEX_SMALL,3,WHITE)
         # 이미지 레코딩 ----------------------------------------------------------------------- 
-        if DIRECTORY_FLAG and (recordOn or oneShot): # 연속 레코드 모드 또는 원샷 촬영 모드
+        if COLLECT_MODE == 'detect':                 # 객체 탐지 수집: 원본 전체를 yolo_raw/ 에
+            if recordOn or oneShot:
+                t = cv.getTickCount()
+                if (t - timeMemory) / cv.getTickFrequency() >= DETECT_SHOT_SEC or oneShot:
+                    timeMemory = t
+                    saveYoloShot(frame)
+                    oneShot = False
+        elif DIRECTORY_FLAG and (recordOn or oneShot): # 연속 레코드 모드 또는 원샷 촬영 모드
             t = cv.getTickCount()
             q = t - timeMemory
             if q > recordTime or oneShot:            # 촬영 간격 시간에 도달 또는 원샷 촬영
@@ -648,7 +676,10 @@ def main():
                 oneShot = False
         # 이미지 파일 이름을 스크린에 BLUE 박스에 표시한다.
         cv.rectangle(viewWin,(80+212,7),(80+426,7+25),BLUE,-1)
-        cv.putText(viewWin,saveFile[-14:],(80+212+8,7+18),cv.FONT_HERSHEY_COMPLEX_SMALL,1,CYAN)
+        cv.putText(viewWin,saveFile[-14:] if COLLECT_MODE == 'drive' else f'YOLO {yoloCount:04d}',
+                   (80+212+8,7+18),cv.FONT_HERSHEY_COMPLEX_SMALL,1,CYAN)
+        cv.putText(viewWin,'DRIVE MODE' if COLLECT_MODE == 'drive' else 'DETECT MODE',
+                   (85,470),cv.FONT_HERSHEY_PLAIN,1,CYAN)   # 지금 수집 모드
         #------------------------------------------------------------------------------------
         cv.imshow('Out', cv.resize(viewWin, (DISPLAY_X, DISPLAY_Y)))  # 이미지를 LCD에 표시합니다.
         #------------------------------------------------------------------------------------
@@ -674,8 +705,11 @@ def main():
                 WIN_XR = WIN_XR_ORG                          # 제어 윈도우 오른쪽 X 값
                 WIN_YU = WIN_YU_ORG                          # 제어 윈도우 위쪽 Y 값
                 WIN_YD = WIN_YD_ORG                          # 제어 윈도우 아래쪽 Y값
-        if keyBoard == ord('p'):                              # YOLO 라벨링용 원본 사진 저장 (대문자 P 는 Home 키와 같은 값 80)
-            saveYoloShot(frame)
+        if keyBoard == ord('p'):                              # YOLO 라벨링용 원본 사진 1장 (대문자 P 는 Home 키와 같은 값 80)
+            if COLLECT_MODE == 'detect':
+                saveYoloShot(frame)
+            else:
+                print('[P] 는 객체 탐지 이미지 수집 모드(시작할 때 2)에서만 사진을 찍습니다.')
         if keyBoard == ord('c') or keyBoard == ord('C'):     # 클리어 View/메뉴 View
             MENU_VIEW = not MENU_VIEW
         if keyBoard == ord('a') or keyBoard == ord('A'):     # 전조등 자동/수동 점등 
@@ -804,12 +838,15 @@ if __name__ == '__main__':
     print('OpenCV Version: ', cv.__version__)
     print('\n')
 
+    COLLECT_MODE = chooseMode()
+    print('수집 모드:', '주행 이미지' if COLLECT_MODE == 'drive' else '객체 탐지 이미지 (yolo_raw/)')
+
     # 연속 촬영 이미지 번호 지정 됬으면 시작 번호 저장 ex) python3 gi wayA 2000
-    if len(sys.argv) >= 3: 
+    if COLLECT_MODE == 'drive' and len(sys.argv) >= 3: 
         fileId = int(sys.argv[2])   # 이미지 시작 번호 지정
 
-    # 이미지 저장 디렉토리 지정 되었는지 확인
-    if len(sys.argv) >= 2:
+    # 이미지 저장 디렉토리 지정 되었는지 확인 (주행 수집에서만. 객체 탐지는 yolo_raw/ 에 저장)
+    if COLLECT_MODE == 'drive' and len(sys.argv) >= 2:
         t = sys.argv[1]             # 이미지 저장 디렉토리
 
         DIRECTORY_FLAG = True
@@ -861,6 +898,11 @@ if __name__ == '__main__':
         sys.exit(1)                                    # 오류 종료 시 설정 저장은 건너뜀
     cleanup()                                          # 모터·서보·GPIO·카메라 정리
     import subprocess
+    if COLLECT_MODE == 'detect' and os.path.isdir(YOLO_RAW_DIR):
+        # sudo 로 저장한 사진을 원래 사용자 소유로 (PC 로 가져가거나 지울 때 권한 문제 방지)
+        owner = os.environ.get('SUDO_USER') or 'pi'
+        subprocess.call(['sudo', 'chown', '-R', '%s:%s' % (owner, owner), YOLO_RAW_DIR])
+        print('객체 탐지 사진 %d장 저장: %s/' % (yoloCount, YOLO_RAW_DIR))
     if DIRECTORY_FLAG:        
         subprocess.call(['sudo', 'chown', 'pi:pi', imageDir])     # 디렉토리를 root 계정에서 pi 계정으로 전환 
         if len(sys.argv) >= 2:
