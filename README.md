@@ -95,6 +95,13 @@ aicar/              원본 aicar 코드 (수정하지 않고 사용)
   aicarA.ipynb      Colab GPU 학습 노트북
   ar.py             자율주행 + 서보모터 2개 키 조작 + YOLO 탐지
   yolo_detect.py    YOLO 동물·사람 탐지 스레드 (ar.py 에서 사용)
+  settings.py       실험 설정값 (기본값 = docs/business-rules/parameters.md)
+  settings_gui.py   설정과 실험 창 (tkinter). 저장하면 실행 중인 ar.py 에 바로 반영
+  control.py        설정 창 ↔ ar.py 실험 명령, 상태 (runtime/ 파일)
+  aim.py            서보 조준 (동물 쪽으로 서보 1 위아래, 서보 2 좌우)
+  stimulus.py       기피 자극 (소리, LED)
+  event_log.py      이벤트 기록 (events/ 에 저장, git 제외)
+  event_server.py   원격 조회 API (조회 전용)
   od.py             객체(동물·사람) 탐지
 yolo/               노루·멧돼지·사람 탐지 YOLO 학습·벤치마크 (docs/software/YOLO.md)
   train/            주행 + 탐지 한 번에 학습하는 Colab 노트북(train_all.ipynb), data.yaml
@@ -137,9 +144,19 @@ python3 dl.py wayA
 #    wayA/ 에 YOLO 모델이 있으면 탐지도 함께: 사람 → 정지, 노루·멧돼지 → 경적
 python3 ar.py wayA
 
-# 5. 객체 탐지
+# 5. 설정과 실험 창 - VNC 데스크톱에서 다른 터미널을 열어 실행 (ar.py 와 함께 켜 둠)
+python3 settings_gui.py
+#    설정 탭: 값을 바꾸고 [저장] (Ctrl+S) → 실행 중인 ar.py 가 0.5초 안에 반영
+#    실험 탭: 서보 각도, 가상 위치 조준, 자극 시작·정지, 기록 남기기 (ar.py 가 실행 중일 때)
+#    tkinter 가 없으면: sudo apt install python3-tk
+#    맥에서 미리 보기: uv run --no-project --managed-python --python 3.9 python settings_gui.py
+#      (맥 기본 Python 3.9 의 Tk 8.5 는 최신 macOS 에서 창이 비어 보이므로 uv 관리 Python 을 씀)
+
+# 6. 객체 탐지
 python3 od.py
 ```
+
+설정과 실험 창에서 바꾼 값은 `aicar/runtime/settings.json` 에 저장되고 git 에 올라가지 않습니다. 실험으로 찾은 좋은 값은 [parameters.md](docs/business-rules/parameters.md) 와 `aicar/settings.py` 기본값에 옮겨 적습니다. 주고받는 형식은 [인터페이스 명세 IF-12](docs/software/interfaces.md#if-12-설정-gui--arpy-후기반영) 참고.
 
 ## 저장소에 아직 없는 원본 파일
 

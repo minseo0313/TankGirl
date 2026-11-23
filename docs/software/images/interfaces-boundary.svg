@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1264" height="770" viewBox="0 0 1264 770" role="img" aria-labelledby="title desc" font-family="Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="16" fill="#1D1D1F">
   <title id="title">수집, 학습, 주행 사이의 인터페이스 경계</title>
-  <desc id="desc">Raspberry Pi의 gi.py와 dl.py가 주행 사진 zip과 YOLO 사진을 만들고, PC와 Colab에서 라벨링과 학습을 거쳐 모델 zip을 만든다. 모델 zip은 Pi의 ar.py가 읽는다. ar.py는 카메라 영상을 받고 탐지, 전원 확인, GPIO 부품과 연결된다. 서보 조준, 자극 출력, 이벤트 기록, 원격 조회 화면은 미반영 기능이다.</desc>
+  <desc id="desc">Raspberry Pi의 gi.py와 dl.py가 주행 사진 zip과 YOLO 사진을 만들고, PC와 Colab에서 라벨링과 학습을 거쳐 모델 zip을 만든다. 모델 zip은 Pi의 ar.py가 읽는다. ar.py는 카메라 영상을 받고 탐지, 전원 확인, GPIO 부품, 서보 조준, 자극 출력, 이벤트 기록과 연결되고, 기록은 원격 조회 API로 나간다. 설정 GUI는 ar.py와 설정, 명령, 상태를 주고받는다.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
       <path d="M 0 0 L 8 4 L 0 8 Z" fill="#86868B"/>
@@ -113,35 +113,41 @@
   <text x="1100" y="294" text-anchor="middle">GPIO 부품</text>
   <text class="note" x="1100" y="314" text-anchor="middle">모터, 서보, 램프, 거리센서</text>
 
-  <!-- 미반영 출력의 공통 연결선 (x 928) -->
-  <path class="line planned" d="M 868 548 H 928 M 928 382 V 550"/>
-  <!-- IF-08 -->
-  <path class="line arrow planned" d="M 928 382 H 984"/>
-  <text class="label secondary" x="956" y="372" text-anchor="middle">IF-08</text>
-  <rect class="box planned" x="984" y="356" width="232" height="52" rx="12"/>
-  <text class="secondary" x="1100" y="378" text-anchor="middle">서보 조준</text>
-  <text class="note" x="1100" y="398" text-anchor="middle">미반영</text>
-  <!-- IF-09 -->
-  <path class="line arrow planned" d="M 928 466 H 984"/>
-  <text class="label secondary" x="956" y="456" text-anchor="middle">IF-09</text>
-  <rect class="box planned" x="984" y="440" width="232" height="52" rx="12"/>
-  <text class="secondary" x="1100" y="462" text-anchor="middle">자극 출력</text>
-  <text class="note" x="1100" y="482" text-anchor="middle">미반영</text>
-  <!-- IF-10 -->
-  <path class="line arrow planned" d="M 928 550 H 984"/>
-  <text class="label secondary" x="956" y="540" text-anchor="middle">IF-10</text>
-  <rect class="box planned" x="984" y="524" width="232" height="52" rx="12"/>
-  <text class="secondary" x="1100" y="546" text-anchor="middle">이벤트 기록</text>
-  <text class="note" x="1100" y="566" text-anchor="middle">미반영</text>
-  <!-- IF-11 -->
-  <path class="line arrow planned" d="M 1100 576 V 616"/>
+  <!-- 공통 연결선을 IF-10 높이까지 연장 -->
+  <path class="line" d="M 912 520 V 550"/>
+  <!-- IF-08 (뼈대) -->
+  <path class="line arrow" d="M 912 382 H 984"/>
+  <text class="label secondary" x="948" y="372" text-anchor="middle">IF-08</text>
+  <rect class="box" x="984" y="356" width="232" height="52" rx="12"/>
+  <text x="1100" y="378" text-anchor="middle">서보 조준</text>
+  <text class="note" x="1100" y="398" text-anchor="middle">aim.py (뼈대)</text>
+  <!-- IF-09 (뼈대) -->
+  <path class="line arrow" d="M 912 466 H 984"/>
+  <text class="label secondary" x="948" y="456" text-anchor="middle">IF-09</text>
+  <rect class="box" x="984" y="440" width="232" height="52" rx="12"/>
+  <text x="1100" y="462" text-anchor="middle">자극 출력</text>
+  <text class="note" x="1100" y="482" text-anchor="middle">stimulus.py (뼈대)</text>
+  <!-- IF-10 (뼈대) -->
+  <path class="line arrow" d="M 912 550 H 984"/>
+  <text class="label secondary" x="948" y="540" text-anchor="middle">IF-10</text>
+  <rect class="box" x="984" y="524" width="232" height="52" rx="12"/>
+  <text x="1100" y="546" text-anchor="middle">이벤트 기록</text>
+  <text class="note" x="1100" y="566" text-anchor="middle">event_log.py (뼈대)</text>
+  <!-- IF-11 (API만, 화면은 미반영) -->
+  <path class="line arrow" d="M 1100 576 V 616"/>
   <text class="label secondary" x="1110" y="601">IF-11</text>
-  <rect class="box planned" x="984" y="616" width="232" height="52" rx="12"/>
-  <text class="secondary" x="1100" y="638" text-anchor="middle">원격 조회 화면</text>
-  <text class="note" x="1100" y="658" text-anchor="middle">미반영</text>
+  <rect class="box" x="984" y="616" width="232" height="52" rx="12"/>
+  <text x="1100" y="638" text-anchor="middle">원격 조회 API</text>
+  <text class="note" x="1100" y="658" text-anchor="middle">event_server.py, 화면은 미반영</text>
+
+  <!-- IF-12: 설정 GUI ↔ ar.py (runtime/ 파일로 주고받음) -->
+  <path class="line arrow" d="M 790 616 V 560"/>
+  <path class="line arrow" d="M 826 560 V 616"/>
+  <text class="label secondary" x="808" y="592" text-anchor="middle">IF-12</text>
+  <rect class="box" x="748" y="616" width="120" height="52" rx="12"/>
+  <text x="808" y="638" text-anchor="middle">설정 GUI</text>
+  <text class="note" x="808" y="658" text-anchor="middle">settings_gui.py</text>
 
   <!-- 범례 -->
-  <path class="line" d="M 48 740 H 96"/>
-  <path class="line planned" d="M 112 740 H 160"/>
-  <text class="label secondary" x="176" y="745">실선 = 지금 있음, 점선 = 미반영</text>
+  <text class="label secondary" x="48" y="745">뼈대 = 함수는 있지만 관찰 → 조준 → 자극 → 재관찰 → 기록 흐름에는 아직 연결 안 됨</text>
 </svg>

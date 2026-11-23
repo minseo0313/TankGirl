@@ -4,12 +4,12 @@
 "언제 무엇을 하나"는 [비즈니스 규칙](../business-rules/README.md), "어떻게 이어지나"는 [시나리오](../scenarios/README.md)에 있고, 이 문서는 그 사이의 약속만 적습니다.
 한쪽을 바꾸면 다른 쪽이 깨지는 곳이 경계입니다. 경계를 바꿀 때는 이 문서부터 고치고, "바꿀 때 함께 고칠 곳"을 모두 고칩니다.
 
-반영 구분은 규칙 문서와 같습니다: `[초기반영]` 원본 aicar, `[후기반영]` 팀이 추가해서 지금 있음, `[미반영]` 구현할 것(이 문서의 형식은 제안).
+반영 구분은 규칙 문서와 같습니다: `[초기반영]` 원본 aicar, `[후기반영]` 팀이 추가해서 지금 있음, `[미반영]` 구현할 것.
 
 ## 1. 경계 한눈에 보기
 
 <p align="center">
-  <img src="images/interfaces-boundary.svg" alt="인터페이스 경계 도식. Raspberry Pi 수집: 카메라에서 IF-01로 gi.py, gi.py에서 IF-02로 주행 사진과 [P] 키 YOLO 사진, 주행 사진에서 dl.py zip. PC와 Colab 학습: YOLO 사진을 라벨링해 2부 YOLO, dl.py zip으로 1부 주행 CNN, 둘을 묶어 프로젝트_models.zip. Raspberry Pi 주행: models.zip이 IF-03, IF-04로 ar.py에, 카메라가 IF-01로 ar.py에 들어가고, ar.py에서 IF-05 yolo_detect.py, IF-06 power_check.py, IF-07 GPIO 부품으로 실선, IF-08 서보 조준, IF-09 자극 출력, IF-10 이벤트 기록, IF-11 원격 조회 화면은 점선(미반영)" width="900">
+  <img src="images/interfaces-boundary.svg" alt="인터페이스 경계 도식. Raspberry Pi 수집: 카메라에서 IF-01로 gi.py, gi.py에서 IF-02로 주행 사진과 [P] 키 YOLO 사진, 주행 사진에서 dl.py zip. PC와 Colab 학습: YOLO 사진을 라벨링해 2부 YOLO, dl.py zip으로 1부 주행 CNN, 둘을 묶어 프로젝트_models.zip. Raspberry Pi 주행: models.zip이 IF-03, IF-04로 ar.py에, 카메라가 IF-01로 ar.py에 들어가고, ar.py에서 IF-05 yolo_detect.py, IF-06 power_check.py, IF-07 GPIO 부품, IF-08 서보 조준(aim.py), IF-09 자극 출력(stimulus.py), IF-10 이벤트 기록(event_log.py), 이벤트 기록에서 IF-11 원격 조회 API(event_server.py)로 이어지고, 설정 GUI(settings_gui.py)가 IF-12로 ar.py와 주고받음. IF-08~10은 뼈대" width="900">
 </p>
 
 그림 원본은 [images/interfaces-boundary.svg](images/interfaces-boundary.svg)입니다. 텍스트 파일이라 상자마다 `<!-- IF-05 -->` 같은 주석을 찾아 바로 고칠 수 있습니다. 경계가 바뀌면 그림도 함께 고칩니다.
@@ -23,10 +23,13 @@
 | IF-05 | ar.py ↔ 탐지 모듈 | Python 함수 | `[후기반영]` |
 | IF-06 | 프로그램 → 전원 확인 | Python 함수 | `[후기반영]` |
 | IF-07 | Pi ↔ 부품 (GPIO, I²C) | 핀, 전압 | `[초기반영]` + `[후기반영]` |
-| IF-08 | 판단 → 서보 조준 | Python 함수 | `[미반영]` |
-| IF-09 | 판단 → 자극 출력 | Python 함수 | `[미반영]` |
-| IF-10 | 판단 → 이벤트 기록 | 파일 형식 | `[미반영]` |
-| IF-11 | 기록 → 원격 조회 화면 | HTTP API | `[미반영]` |
+| IF-08 | 판단 → 서보 조준 | Python 함수 | `[후기반영]` 뼈대 |
+| IF-09 | 판단 → 자극 출력 | Python 함수 | `[후기반영]` 뼈대 |
+| IF-10 | 판단 → 이벤트 기록 | 파일 형식 | `[후기반영]` 뼈대 |
+| IF-11 | 기록 → 원격 조회 화면 | HTTP API | `[후기반영]` API만 |
+| IF-12 | 설정 GUI ↔ ar.py | 파일 (설정, 명령, 상태) | `[후기반영]` |
+
+"뼈대"는 함수는 있지만 규칙의 상태 흐름(관찰 → 조준 → 자극 → 재관찰 → 기록)에는 아직 연결되지 않았다는 뜻입니다. 지금은 설정 GUI 실험 버튼과 `AIM_AUTO` 설정으로 시험합니다.
 
 ---
 
@@ -167,41 +170,50 @@ Pi 본체 전압만 봅니다. 서보 전원선이 빠진 것은 알 수 없습�
 
 ---
 
-## IF-08 판단 → 서보 조준 `[미반영]`
+## IF-08 판단 → 서보 조준 `[후기반영]` (뼈대)
 
-아래 형식은 제안입니다. 구현할 때 확정하고 이 표를 고칩니다.
-지금 있는 함수 `servoMoveTo(servo, name, angle, label, release)`는 절대 각도로 움직이는 수동 조작용이고, 조준 함수는 그 위에 만듭니다.
-
-| 함수 | 입력 | 출력 | 실패하면 |
-|------|------|------|----------|
-| `aimAt(box)` | IF-05 박스 1개 | 실제로 보낸 `(서보 1 각도, 서보 2 각도)` | 서보가 없으면(`None`) 아무것도 안 하고 지금 각도를 돌려줌 |
-| `aimCenter()` | 없음 | 없음. 두 서보를 `SERVO_CENTER`로 | 위와 같음 |
-| `aimHold()` | 없음 | 없음. 그 자리에서 멈춤 | 위와 같음 |
-
-- 각도 단위는 도(0~180). 서보 1 = 위아래(`AIM_TILT_MIN~MAX`), 서보 2 = 좌우.
-- 계산 순서는 규칙 AIM-02(목표 각도 → 범위 자르기 → 이동량 자르기)를 따릅니다.
-
-## IF-09 판단 → 자극 출력 `[미반영]`
-
-형식은 제안입니다.
+`aicar/aim.py`. 서보 핀은 ar.py 가 잡고 있으므로, 이 모듈은 각도만 계산하고 실제 이동은 ar.py 가 넘긴 함수(`aimMove`, `aimHold`)로 합니다.
+지금은 설정 `AIM_AUTO`를 켜면, 자율주행이 꺼져 있고 바퀴가 멈춰 있을 때 가장 큰 동물 박스 쪽으로 조준합니다. 관찰, 조준 같은 상태 흐름은 아직 없습니다.
 
 | 함수 | 입력 | 출력 | 실패하면 |
 |------|------|------|----------|
-| `stimulusStart(kind, sec)` | `kind` = `'sound_a'`, `'sound_b'`, `'sound_led'` 중 하나, `sec` = `STIMULUS_SEC` | 없음. 바로 돌아오고 `sec` 뒤 스스로 꺼짐 | 소리 파일이 없거나 장치를 못 열면 `False`를 돌려주고 터미널에 원인 출력 |
-| `stimulusStop()` | 없음 | 없음. 즉시 끄고 남은 시간도 지움 | 실패해도 예외를 밖으로 내지 않고 출력만 (끄는 함수가 멈추면 안 되므로) |
-| `stimulusActive()` | 없음 | 켜져 있으면 `True` | |
+| `computeAim(box, current, s)` | IF-05 박스 1개, 지금 `(tilt, pan)`, 설정 dict | 보낼 `(tilt, pan)` | 없음 (계산만) |
+| `Aimer.aimAt(box, s, force=False)` | 박스, 설정 | 보낸 `(tilt, pan)`. `AIM_INTERVAL_SEC` 간격, 수동 조작 뒤 쉬는 시간 안이면 안 보냄 | 서보가 없으면 ar.py 쪽에서 원인만 출력 |
+| `Aimer.moveTo(tilt, pan, s)` | 각도 | 범위로 자른 `(tilt, pan)` | 위와 같음 |
+| `Aimer.aimCenter(s)` | 설정 | `(SERVO_CENTER, SERVO_CENTER)` | 위와 같음 |
+| `Aimer.aimHold()` | 없음 | 없음. 그 자리에서 힘 풀기. 사람이 보이는 동안 ar.py 가 프레임마다 부름 | 위와 같음 |
+| `Aimer.pause(sec)` | 초 | 없음. 그동안 자동 조준을 쉼 (AIM-06) | |
+| `largestBox(boxes)` | 박스 목록 | 넓이가 가장 큰 박스, 없으면 `None` (DET-05) | |
 
+- 각도 단위는 도(0~180). 서보 1 = 위아래(tilt, `AIM_TILT_MIN~MAX`), 서보 2 = 좌우(pan, `AIM_PAN_MIN~MAX`).
+- 계산 순서는 규칙 AIM-02(목표 각도 → 범위 자르기 → 이동량 자르기)를 따릅니다. `AIM_CAMERA_ON_SERVO`로 카메라가 서보 위에 있는지 고릅니다.
+
+## IF-09 판단 → 자극 출력 `[후기반영]` (뼈대)
+
+`aicar/stimulus.py`의 `Stimulus` 클래스. ar.py 는 `stimulus` 객체 하나를 씁니다.
+
+| 함수 | 입력 | 출력 | 실패하면 |
+|------|------|------|----------|
+| `start(kind, sec, s)` | `kind` = `'sound_a'`, `'sound_b'`, `'sound_led'` 중 하나, `sec` = `STIMULUS_SEC`, 설정 | 켜면 `True`. 바로 돌아오고 `sec` 뒤 스스로 꺼짐 | 소리 파일이 없거나 재생 프로그램을 못 열면 `False`와 터미널에 원인. LED를 못 열면 소리만 |
+| `stop()` | 없음 | 없음. 즉시 끄고 남은 시간도 지움 | 예외를 밖으로 내지 않고 출력만 (끄는 함수가 멈추면 안 되므로) |
+| `active()` | 없음 | 켜져 있으면 `True` | |
+| `close()` | 없음 | 끄고 LED 핀 해제. ar.py 종료 정리에서 부름 | 출력만 |
+
+- 소리: `SOUND_PLAYER`(aplay 등)로 `SOUND_A_FILE`, `SOUND_B_FILE`을 재생합니다. 파일이 `sec`보다 짧으면 파일 길이만큼만 납니다. 소리 파일은 아직 없습니다. `aicar/sounds/` 안의 파일만 재생합니다(밖을 가리키면 거부).
+- LED: `sound_led`일 때 `LED_PIN`(0이면 사용 안 함)을 `LED_BLINK_SEC` 간격으로 깜빡입니다. 핀은 빈 핀(4, 16, 19, 22)만 고를 수 있고, 모듈도 다른 장치가 쓰는 핀을 한 번 더 거부합니다.
+- 사람이 보이면 ar.py 가 매 프레임 `stop()`을 부릅니다. 탐지가 꺼졌거나 멈춰도 끕니다(`ALLOW_WITHOUT_DETECT`로 시험 허용 가능). `[Space]`, `[End]`도 끕니다.
 - 장애물 경고 경적(부저, GPIO 23)은 자극이 아닙니다. 이 함수들로 켜고 끄지 않습니다(규칙 SAFE-06 예외).
 
-## IF-10 판단 → 이벤트 기록 `[미반영]`
+## IF-10 판단 → 이벤트 기록 `[후기반영]` (뼈대)
 
-형식은 제안입니다. 항목은 규칙 LOG-01을 따릅니다.
+`aicar/event_log.py`의 `EventLog`. 항목은 규칙 LOG-01을 따릅니다. 지금은 설정 GUI의 [기록 남기기]로만 씁니다. 상태 흐름이 생기면 "기록" 상태에서 씁니다.
 
 | 항목 | 내용 |
 |------|------|
-| 저장 위치 | `aicar/events/<날짜>.jsonl` (하루 1파일, 한 줄 = 이벤트 1건), 사진은 `aicar/events/<날짜>/<이벤트 번호>.jpg` |
-| 쓰는 시점 | 상태가 "기록"이 될 때 1번 |
-| 실패하면 | 저장 공간, 권한 오류를 터미널에 출력하고 순찰은 계속 (기록 실패로 로봇을 멈추지 않음) |
+| 저장 위치 | `aicar/events/<날짜>.jsonl` (하루 1파일, 한 줄 = 이벤트 1건), 사진은 `aicar/events/<날짜>/<이벤트 번호>.jpg`. `events/`는 git에 넣지 않음 |
+| 쓰는 함수 | `write(event, photo=None)` → 저장한 dict(`id`, `time`, `photo` 채움), 실패하면 `None`. `event`에 `species`와 `result` 필수 |
+| 읽는 함수 | `listEvents(day, page, limit)`, `getEvent(id)`, `photoPath(day, name)` (IF-11이 사용) |
+| 실패하면 | 저장 공간, 권한 오류를 터미널에 출력하고 순찰은 계속 (기록 실패로 로봇을 멈추지 않음). 깨진 줄은 읽을 때 건너뜀 |
 
 한 줄 예:
 
@@ -217,15 +229,15 @@ Pi 본체 전압만 봅니다. 서보 전원선이 빠진 것은 알 수 없습�
 | `species` | IF-04 클래스 이름, 사람만 있었으면 `person` |
 | `zone` | 구역 번호, 관찰 지점이 아닌 곳이면 `null` (규칙 11절 결정 필요) |
 
-## IF-11 기록 → 원격 조회 화면 `[미반영]`
+## IF-11 기록 → 원격 조회 화면 `[후기반영]` (API만, 화면은 미반영)
 
-Pi가 핫스팟 안에서만 여는 로컬 HTTP 서버입니다. 형식은 제안입니다.
+`aicar/event_server.py`. Pi가 핫스팟 안에서만 여는 로컬 HTTP 서버입니다. 설정 `EVENT_SERVER_ON`을 켜고 ar.py 를 다시 실행하면 `EVENT_SERVER_PORT`(기본 8000)로 열립니다. 브라우저에서 보는 조회 화면(HTML)은 아직 없고, 아래 JSON API만 있습니다.
 
 | 요청 | 설명 | 응답 `data` |
 |------|------|-------------|
 | `GET /api/events?date=2026-11-23&page=1&limit=20` | 그날 이벤트 목록, 최신순 | 이벤트 배열 (IF-10 한 줄과 같은 모양) |
 | `GET /api/events/{id}` | 이벤트 1건 | 이벤트 1개 |
-| `GET /api/status` | 지금 상태 | `{"state": "순찰", "detect_on": true, "detect_error": null}` |
+| `GET /api/status` | 지금 상태 (IF-12 상태와 같음) | `{"state": "정지", "detect_on": true, "person": false, "animal": true, "tilt": 90, "pan": 80, ...}` |
 | `GET /photos/{날짜}/{파일}` | 사진 | JPEG |
 
 응답 모양 (공통):
@@ -238,6 +250,37 @@ Pi가 핫스팟 안에서만 여는 로컬 HTTP 서버입니다. 형식은 제�
 - 사진 경로는 `events/` 안의 파일만 열도록 검사합니다(`../` 차단).
 - 로봇을 움직이는 요청(POST 등)은 만들지 않습니다. 조회만 합니다.
 - 핫스팟 밖(인터넷)에 열지 않습니다. 접속 주소는 공개 문서에 적지 않습니다.
+- 오류 응답에는 내부 정보를 넣지 않고(`"서버 오류"`), 원인은 Pi 터미널에만 출력합니다. `/api/status`의 `detect_error`는 참/거짓만, 마지막 실험 명령 문장은 내보내지 않습니다.
+- 연결 하나에 5초 시간 제한을 둡니다(연결만 열어 두는 기기가 스레드를 붙잡지 않게).
+
+## IF-12 설정 GUI ↔ ar.py `[후기반영]`
+
+`aicar/settings.py`, `aicar/control.py`, `aicar/settings_gui.py`. 실험하며 값을 바꾸고, 서보, 자극, 기록을 바로 시험하기 위한 경계입니다.
+서보 핀은 ar.py 가 잡고 있어서 GUI 는 장치를 직접 움직이지 않고 파일로 주고받습니다. 파일은 모두 `aicar/runtime/`에 있고 git에 넣지 않습니다.
+
+| 파일 | 쓰는 쪽 → 읽는 쪽 | 내용 | 주기 |
+|------|-------------------|------|------|
+| `runtime/settings.json` | GUI [저장] → ar.py | 설정값 전체 (`settings.SCHEMA`의 키) | ar.py 가 0.5초마다 바뀌었는지 확인하고 바로 반영 |
+| `runtime/control.json` | GUI 실험 버튼 → ar.py | `{"id", "cmd", "args", "time"}` 명령 1개 | ar.py 가 프레임마다 확인, 같은 `id`는 한 번만 실행 |
+| `runtime/status.json` | ar.py → GUI | 상태, 사람/동물, 서보 각도, 자극, 마지막 명령 결과 | ar.py 가 1초마다 씀. 3초보다 오래되면 GUI 는 "ar.py 꺼짐" |
+
+실험 명령 (`control.COMMANDS`):
+
+| `cmd` | `args` | ar.py 가 하는 일 |
+|-------|--------|------------------|
+| `aim_center` | | 두 서보를 `SERVO_CENTER`로 (시작 직후 위치를 몰라도 항상 신호를 보냄) |
+| `aim_angle` | `tilt`, `pan` | 그 각도로 (범위로 자름) |
+| `aim_point` | `x`, `y` | 그 위치에 동물이 있다고 보고 AIM-02 계산으로 1번 조준 |
+| `aim_hold` | | 서보 힘 풀기 |
+| `stim_start` | `kind` | 자극 시작. 사람이 보이면 거부 |
+| `stim_stop` | | 자극 정지 |
+| `log_test` | `result` | 지금 화면 사진과 함께 시험 이벤트(`species: "test"`) 기록 |
+
+- 탐지가 꺼졌거나 멈추면 `stim_start`와 서보 명령은 거부합니다. 설정 `ALLOW_WITHOUT_DETECT`를 켜면 허용하고, GUI 상태 칸에 경고를 띄웁니다.
+- 서보 명령 뒤에는 자동 조준이 `MANUAL_OVERRIDE_SEC` 동안 쉽니다. 사람이 보이면 서보 명령(`aim_center`, `aim_angle`, `aim_point`)과 키보드 서보 키는 거부합니다.
+- 설정값이 틀리면 GUI 가 저장하지 않고 이유를 보여 줍니다. 파일을 손으로 고쳐 틀린 값(형식 오류, 무한대 등)이 들어가면 ar.py 는 그 항목만 기본값으로 씁니다. 깨진 `control.json`은 무시합니다.
+- "재시작 필요" 항목(`EVENT_SERVER_ON`, `EVENT_SERVER_PORT`)은 ar.py 를 다시 켜야 반영됩니다.
+- `ar.py` 시작 전에 남아 있던 명령, 5초보다 오래된 명령은 실행하지 않습니다.
 
 ---
 
