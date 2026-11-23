@@ -71,6 +71,8 @@ class SettingsApp:
             if p['group'] not in groups:
                 groups.append(p['group'])
         for g in groups:
+            if g == '시나리오':                              # 시나리오 탭의 "탐지 기반" 줄에서 바꿈
+                continue
             self._scrollTab(nb, lambda parent, g=g: self._settingsTab(parent, g), g)
         self._scrollTab(nb, self._experimentTab, '실험')
 
@@ -98,7 +100,7 @@ class SettingsApp:
         outer = ttk.Frame(parent)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(0, weight=1)
-        canvas = tk.Canvas(outer, highlightthickness=0, width=300, height=160)   # 작게 요청하고 창 크기만큼 늘어남
+        canvas = tk.Canvas(outer, highlightthickness=0, width=300, height=120)   # 작게 요청하고 창 크기만큼 늘어남
         bar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
         canvas.configure(yscrollcommand=bar.set)
         canvas.grid(row=0, column=0, sticky='nsew')
@@ -225,7 +227,17 @@ class SettingsApp:
         return f
 
     def _collect(self):
-        return {k: self._parse(k, v.get()) for k, v in self.vars.items()}
+        # 설정 탭에 없는 값(시나리오 탭의 자동 실행 등)은 저장된 값을 그대로 둠
+        return dict(settings.load(), **{k: self._parse(k, v.get()) for k, v in self.vars.items()})
+
+    def _saveOne(self, key, value):
+        '''값 하나만 바로 저장 (시나리오 탭 자동 실행 칸). 다른 탭의 저장 안 한 값은 건드리지 않음.'''
+        try:
+            self.values = settings.save(dict(settings.load(), **{key: value}))
+        except (ValueError, OSError) as e:
+            messagebox.showerror('저장하지 않았습니다', str(e))
+            return
+        self.msg.config(text='저장함 → ar.py 가 곧 반영합니다')
 
     def _setVars(self, values):
         for k, v in self.vars.items():
@@ -278,8 +290,32 @@ class SettingsApp:
         self.scnPick.bind('<<ComboboxSelected>>', lambda e: self._showScenario())
         ttk.Button(top, text='▶ 실행', width=6, command=self._runScenario).grid(row=0, column=1, padx=(6, 0))
         ttk.Button(top, text='■ 중지', width=6, command=lambda: self._send('scenario_stop')).grid(row=0, column=2, padx=(4, 0))
+        ttk.Label(top, text='규칙 기반: 고른 시나리오를 [▶ 실행] 으로 바로 순서대로', foreground=self.HINT).grid(
+            row=1, column=0, columnspan=3, sticky='w', pady=(2, 0))
+
+        # 탐지 기반: 동물이 탐지되면 고른 시나리오를 자동 실행 (값은 바로 저장 → ar.py 가 0.5초 안에 반영)
+        auto = ttk.Frame(top)
+        auto.grid(row=2, column=0, columnspan=3, sticky='w', pady=(4, 0))
+        self.autoOn = tk.BooleanVar(value=self.values['AUTO_SCARE'])
+        ttk.Checkbutton(auto, text='탐지 기반: 동물이 보이면 자동 실행', variable=self.autoOn,
+                        command=lambda: self._saveOne('AUTO_SCARE', self.autoOn.get())).pack(side='left')
+        self.autoPick = ttk.Combobox(auto, state='readonly', width=5, values=self.scnIds)
+        self.autoPick.set(self.values['AUTO_SCENARIO'] if self.values['AUTO_SCENARIO'] in self.scnIds else 'S-A')
+        self.autoPick.bind('<<ComboboxSelected>>', lambda e: self._saveOne('AUTO_SCENARIO', self.autoPick.get()))
+        self.autoPick.pack(side='left', padx=(6, 0))
+        ttk.Label(auto, text='쉬는').pack(side='left', padx=(8, 2))
+        self.autoCool = tk.StringVar(value='%g' % self.values['AUTO_SCARE_COOLDOWN'])
+        cool = ttk.Spinbox(auto, textvariable=self.autoCool, from_=0, to=600, increment=5, width=4,
+                           command=lambda: self._saveOne('AUTO_SCARE_COOLDOWN', self.autoCool.get()))
+        cool.bind('<FocusOut>', lambda e: self._saveOne('AUTO_SCARE_COOLDOWN', self.autoCool.get()))
+        cool.bind('<Return>', lambda e: self._saveOne('AUTO_SCARE_COOLDOWN', self.autoCool.get()))
+        cool.pack(side='left')
+        ttk.Label(auto, text='초').pack(side='left', padx=(2, 0))
+        self.detectLabel = ttk.Label(top, text='탐지: ar.py 확인 중', foreground=self.HINT)
+        self.detectLabel.grid(row=3, column=0, columnspan=3, sticky='w')
+
         self.scnNow = ttk.Label(top, text='지금: 대기', font=self.boldFont, foreground=self.ACCENT)
-        self.scnNow.grid(row=1, column=0, columnspan=3, sticky='w', pady=(6, 0))
+        self.scnNow.grid(row=4, column=0, columnspan=3, sticky='w', pady=(6, 0))
         self.seqHeads = []                                 # 시퀀스 블록 번호 (지금 단계에 ▶ 표시)
         self.scnTitle = ttk.Label(f, text='', foreground=self.HINT)
         self.scnTitle.grid(row=1, column=0, sticky='w', pady=(4, 0))
@@ -555,6 +591,9 @@ class SettingsApp:
             ]
             if s.get('scenario'):
                 self._showProgress(s['scenario'])
+            self.detectLabel.config(text='탐지: %s   동물: %s   사람: %s' % (
+                ('켜짐' if s.get('detect_ok') else '꺼짐 (모델 없음 또는 [O] 로 끔)') if s.get('detect_on') is not None else '-',
+                '보임' if s.get('animal') else '-', '보임' if s.get('person') else '-'))
             if s.get('detect_error'):
                 lines.append('탐지 오류: %s' % s['detect_error'])
             if not s.get('detect_ok'):
@@ -565,6 +604,7 @@ class SettingsApp:
         else:
             self.connLabel.config(text='○ ar.py 꺼짐', foreground='#B25000')
             self.statusText.config(text='')
+            self.detectLabel.config(text='탐지: ar.py 가 꺼져 있어 알 수 없음')
         self.root.after(STATUS_REFRESH_MS, self.refreshStatus)
 
 def build(root):

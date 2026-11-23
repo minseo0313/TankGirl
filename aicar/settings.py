@@ -39,6 +39,10 @@ SCHEMA = [
     P('STOP_DISTANCE', 110, '안전', '정지 거리 (mm), 목표 200', 30, 1000, rule='SAFE-02', origin=True),
     P('ALLOW_WITHOUT_DETECT', False, '안전', '탐지가 꺼져도 자극, 서보 실험 허용 (사람 확인 안 됨, 시험용)', rule='SAFE-08'),
     P('DETECT_CONF', 0.25, '탐지', '탐지 기준 (클수록 확실한 것만)', 0.05, 0.95, rule='DET-01'),
+    # '시나리오' 묶음은 설정 탭 대신 GUI 시나리오 탭에서 바꿉니다 (탐지 기반 자동 실행)
+    P('AUTO_SCARE', False, '시나리오', '동물이 탐지되면 시나리오 자동 실행 (끄면 예전처럼 보이는 동안 경적)', rule='DET-02'),
+    P('AUTO_SCENARIO', 'S-A', '시나리오', '탐지되면 실행할 시나리오 번호', rule='DET-02'),
+    P('AUTO_SCARE_COOLDOWN', 10.0, '시나리오', '자동 실행 뒤 다시 하기까지 쉬는 시간 (초)', 0.0, 600.0, rule='STIM-03'),
     P('DETECT_HOLD_SEC', 1.0, '탐지', '마지막으로 본 뒤 "있음" 유지 시간 (초)', 0.1, 5.0, rule='DET-01', adv=True),
     P('AIM_AUTO', False, '서보 조준', '동물 쪽으로 자동 조준 (차가 멈춰 있을 때만)', rule='AIM-02'),
     P('AIM_CAMERA_ON_SERVO', False, '서보 조준', '카메라를 서보에 달았음', rule='AIM-02'),

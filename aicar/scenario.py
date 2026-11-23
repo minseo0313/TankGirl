@@ -65,6 +65,7 @@ SEQUENCES = {
 DEER = {'name': '노루', 'species': 'roe_deer', 'x': 480, 'y': 120, 'zone': 2}
 SCENARIOS = {
     'S-02': ('서보로 찾고 빵 소리 + LED', DEER, ['scan', 'found', 'scare', 'return']),
+    'S-A': ('동물이 탐지되면 빵 + LED (자동)', DEER, ['scare', 'return']),   # ar.py 가 탐지되면 자동 실행 (AUTO_SCARE)
 }
 # 그 밖의 시나리오(사람, 장애물 등)는 docs/scenarios/scenarios.md 에만 있습니다
 

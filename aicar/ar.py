@@ -248,6 +248,8 @@ eventServer = None                    # 원격 조회 서버 (EVENT_SERVER_ON �
 scenarioRun = None                    # 실행 중(또는 마지막) 시나리오 (scenario.Player)
 scenarioHorn = False                  # 시나리오가 켠 부저([H] 경적과 같은 GPIO 23)
 scenarioLamp = False                  # 시나리오가 켠 전조등([L] 과 같은 네오픽셀)
+AUTO_SCENARIO = 'S-A'                 # 설정 AUTO_SCENARIO 가 없는 번호일 때 쓰는 자동 실행 시나리오
+AUTO_CONFIRM_SEC = 0.5                # 동물이 이만큼 계속 보여야 자동 대응 (한두 프레임 오탐으로 울리지 않게, DET-03)
 # 서보 키 (숫자열, 숫자 키패드, 소문자). 누르면 자동 조준을 MANUAL_OVERRIDE_SEC 동안 쉼 (AIM-06)
 SERVO_MANUAL_KEYS = {ord(c) for c in '123450qwert'} | {0x80 + ord(c) for c in '123450'}
 
@@ -609,7 +611,7 @@ def reportError(e):
 #============================================================================================
 def main():
 
-    global lightMode, lightCar, scenarioHorn, scenarioLamp
+    global lightMode, lightCar, scenarioHorn, scenarioLamp, scenarioRun
 
     # 상수 값 설정
     RESTART_NUM = 33             # Red 신호 유지 시간(frame단위)
@@ -636,6 +638,8 @@ def main():
     DETECT_ON = detector is not None  # YOLO 탐지 동작 상태 ([O] 키로 전환)
     statusTime = 0.0             # 마지막으로 상태 파일을 쓴 시각
     lastCommand = ''             # 마지막 실험 명령 결과 (설정 GUI 에 표시)
+    animalSince = None           # 동물이 계속 보이기 시작한 시각 (자동 대응 확정용)
+    lastAutoScare = -1e9         # 마지막 자동 대응 시각 (AUTO_SCARE_COOLDOWN)
 
     #----------------------------------------------------------------------------------------
     while True:
@@ -746,8 +750,8 @@ def main():
         boxes = []
         if DETECT_ON:
             personSeen, animalSeen, boxes, inferMs = detector.state()
-            if animalSeen and not personSeen:
-                horn = 5                                 # 5 프레임 동안 경적 (보이는 동안 계속)
+            if animalSeen and not personSeen and not SETTINGS['AUTO_SCARE']:
+                horn = 5                                 # 5 프레임 동안 경적 (보이는 동안 계속). 자동 대응을 켜면 S-A 가 대신 함
             if VIEW_FLAG:
                 for x1, y1, x2, y2, name, conf in boxes:
                     color = YELLOW if name == 'person' else RED
@@ -774,6 +778,15 @@ def main():
             if target is not None:
                 aimer.aimAt(target, SETTINGS)
         # 시나리오 시험: 바퀴는 세우고 순서대로 실행 (탐지가 꺼져 있어도 진행). 탐지가 켜져 있고 사람이 보이면 중지 ----
+        # 동물이 AUTO_CONFIRM_SEC 동안 계속 보이면 자동 대응 시나리오 (사람이 보이면 안 함, 쉬는 시간 지켜서)
+        animalSince = (animalSince or startCycle) if animalSeen and not personSeen else None
+        if SETTINGS['AUTO_SCARE'] and animalSince is not None and startCycle - animalSince >= AUTO_CONFIRM_SEC \
+                and (scenarioRun is None or scenarioRun.done) \
+                and startCycle - lastAutoScare >= SETTINGS['AUTO_SCARE_COOLDOWN']:
+            sid = SETTINGS['AUTO_SCENARIO'] if SETTINGS['AUTO_SCENARIO'] in scn.SCENARIOS else AUTO_SCENARIO
+            scenarioRun = scn.Player(sid, startCycle)
+            lastAutoScare = startCycle
+            print('[탐지] 동물 확인 → %s 자동 실행' % sid)
         if scenarioRun is None or scenarioRun.done:
             scenarioHorn = scenarioLamp = False          # 끝나거나 멈추면 부저, 전조등을 반드시 끔
         else:
