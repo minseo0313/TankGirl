@@ -22,7 +22,8 @@ PERSON_IMGSZ = 416                      # 모델을 만든 크기와 같아야 �
 ANIMAL_IMGSZ = 640
 DETECT_CONF = 0.25                      # 이 신뢰도 이상만 탐지로 봅니다 (벤치마크와 같은 값)
 DETECT_HOLD_SEC = 1.0                   # 마지막 탐지 후 이 시간 동안 탐지 상태를 유지 (한두 장 놓쳐도 깜빡이지 않게)
-ANIMAL_NAMES = ('roe_deer', 'wild_boar')
+# shortcut: 시험을 위해 우선 클래스 2번(wild_boar, 멧돼지)만 동물로 탐지. 노루도 쓰려면 'roe_deer' 를 다시 넣기
+ANIMAL_NAMES = ('wild_boar',)
 
 def hasModels(modelDir):
     '''modelDir 안에 사람·동물 모델 폴더가 모두 있으면 True.'''

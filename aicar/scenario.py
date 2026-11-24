@@ -56,6 +56,10 @@ SEQUENCES = {
         ('부저 빵', ('horn', 'on'), 0.5),
         ('부저 끄기', ('horn', 'off'), 2.5),
         ('전조등 끄기', ('lamp', 'off'), 0)]),
+    'snap':   ('탐지한 화면을 찍는다', [
+        ('{name} 사진 찍기', ('photo',), 0)]),
+    'record': ('기록한다', [
+        ('기록: 관찰 불가 (재관찰은 아직 없음)', ('log', 'unknown'), 0)]),
     'return': ('가운데로 돌아온다', [
         ('서보 가운데', ('center',), 1.5)]),
 }
@@ -63,9 +67,11 @@ SEQUENCES = {
 # 시나리오: 번호 → (제목, 대상, [시퀀스 순서]) ---------------------------------------------------
 # 대상: name 표시 이름, species 기록 종류, x, y 화면 위치 (카메라 640x480, '대상 쪽으로 조준' 에서 씀), zone 구역
 DEER = {'name': '노루', 'species': 'roe_deer', 'x': 480, 'y': 120, 'zone': 2}
+BOAR = {'name': '멧돼지', 'species': 'wild_boar', 'x': 320, 'y': 240, 'zone': None}   # 구역은 아직 안 정함 (S-09)
 SCENARIOS = {
     'S-02': ('서보로 찾고 빵 소리 + LED', DEER, ['scan', 'found', 'scare', 'return']),
     'S-A': ('동물이 탐지되면 빵 + LED (자동)', DEER, ['scare', 'return']),   # ar.py 가 탐지되면 자동 실행 (AUTO_SCARE)
+    'S-B': ('멧돼지가 탐지되면 사진 + 빵 + LED + 기록 (자동)', BOAR, ['snap', 'scare', 'record', 'return']),   # 시험: S-16
 }
 # 그 밖의 시나리오(사람, 장애물 등)는 docs/scenarios/scenarios.md 에만 있습니다
 
@@ -245,6 +251,12 @@ if __name__ == '__main__':
     assert kinds == ['servo_to', ('lamp', 'on'), ('horn', 'on'), ('horn', 'off'), ('lamp', 'off'), 'center'], kinds
     lastPan = max(i for i, a in enumerate(acts) if a[0] == 'servo_pan')
     assert acts.index(('lamp', 'on')) > lastPan and acts.index(('horn', 'on')) > lastPan     # 서보 쓸기가 끝난 뒤 빵 + 전조등
+    # S-B: 사진 → 빵 + 전조등 → 기록(멧돼지, 관찰 불가) → 가운데
+    p = Player('S-B', 0.0)
+    acts = [a for t in range(0, 200) for a in p.step(t * 0.05)]
+    assert [a[0] for a in acts] == ['photo', 'lamp', 'horn', 'horn', 'lamp', 'log', 'center'], acts
+    rec = [a[1] for a in acts if a[0] == 'log'][0]
+    assert rec['species'] == 'wild_boar' and rec['result'] == 'unknown' and rec['scenario'] == 'S-B'
     p = Player('S-02', 0.0)
     p.step(0.0)
     assert p.status()['seq'] == 0 and p.status()['step'] == '서보를 왼쪽으로'
