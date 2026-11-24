@@ -9,7 +9,7 @@
 ## 1. 경계 한눈에 보기
 
 <p align="center">
-  <img src="images/interfaces-boundary.svg" alt="인터페이스 경계 도식. Raspberry Pi 수집: 카메라에서 IF-01로 gi.py, gi.py에서 IF-02로 주행 사진과 [P] 키 YOLO 사진, 주행 사진에서 dl.py zip. PC와 Colab 학습: YOLO 사진을 라벨링해 2부 YOLO, dl.py zip으로 1부 주행 CNN, 둘을 묶어 프로젝트_models.zip. Raspberry Pi 주행: models.zip이 IF-03, IF-04로 ar.py에, 카메라가 IF-01로 ar.py에 들어가고, ar.py에서 IF-05 yolo_detect.py, IF-06 power_check.py, IF-07 GPIO 부품, IF-08 서보 조준(aim.py), IF-09 자극 출력(stimulus.py), IF-10 이벤트 기록(event_log.py), 이벤트 기록에서 IF-11 원격 조회 API(event_server.py)로 이어지고, 설정 GUI(settings_gui.py)가 IF-12로 ar.py와 주고받음. IF-08~10은 뼈대" width="900">
+  <img src="images/interfaces-boundary.svg" alt="인터페이스 경계 도식. Raspberry Pi 수집: 카메라에서 IF-01로 gi.py, gi.py는 시작할 때 모드 1 주행 사진(IF-02, 프로젝트 폴더의 P0001__+12.png)과 모드 2 탐지 사진(yolo_raw/날짜/)을 만든다. 주행 사진은 dl.py로 편집해 프로젝트 zip, 탐지 사진은 label.py로 라벨링해 --zip으로 yolo_dataset.zip(7:2:1). Colab 학습: yolo_dataset.zip은 train_detect.ipynb(탐지만, detect_models.zip)와 train_all.ipynb 2부 YOLO 학습으로, 프로젝트 zip은 1부 주행 CNN으로 가고, 3부에서 프로젝트_models.zip(주행 모델 .pt, 사람 모델 416, 동물 모델 640)으로 묶는다. Raspberry Pi 주행: models.zip을 aicar/에서 풀어 IF-03, IF-04로 ar.py에, 카메라가 IF-01로 ar.py에 들어간다. ar.py는 차선으로 조향각을 내고 사람, 멧돼지, 장애물이면 정지하며 카메라 서보를 천천히 왕복한다. ar.py에서 IF-05 yolo_detect.py, IF-06 power_check.py, IF-07 GPIO 부품, IF-08 aim.py(뼈대), IF-09 stimulus.py(뼈대), scenario.py, IF-10 event_log.py(뼈대)로 이어지고, event_log.py에서 IF-11 event_server.py 조회 API로 이어진다. ar.py와 settings_gui.py는 IF-12 runtime 파일(settings.json, control.json, status.json, sequences.json)로 주고받는다" width="900">
 </p>
 
 그림 원본은 [images/interfaces-boundary.svg](images/interfaces-boundary.svg)입니다. 텍스트 파일이라 상자마다 `<!-- IF-05 -->` 같은 주석을 찾아 바로 고칠 수 있습니다. 경계가 바뀌면 그림도 함께 고칩니다.
@@ -31,6 +31,15 @@
 
 "뼈대"는 함수는 있지만 규칙의 상태 흐름(관찰 → 조준 → 자극 → 재관찰 → 기록)에는 아직 연결되지 않았다는 뜻입니다. 지금은 설정 GUI 실험 버튼과 `AIM_AUTO` 설정으로 시험합니다.
 
+### 주행 중 판단 흐름
+
+<p align="center">
+  <img src="images/drive-pipeline.svg" alt="자율주행 중 기본 동작 흐름. 입력: 카메라(서보 위에 달림), 거리센서(켰을 때만). 모델: 카메라 화면으로 주행 방향 예측(CNN, 차선에서 조향각)과 사람, 멧돼지 탐지(YOLO, 주행과 따로 실행). 판단: 사람이 보이면 기피 자극을 끄고, 멧돼지만 보이면 경적 한 번과 전조등, 장애물이 가깝거나 수동 정지 키를 누르면, 하나라도 해당할 때 바퀴 정지. 그 밖에는 조향각대로 주행하고, 보이지 않게 되고 1초 뒤 다시 주행. 출력: 바퀴 모터, 부저와 전조등, 카메라 서보(천천히 계속 왕복, 보이면 멈춤). 카메라 서보는 카메라 방향을 바꿈. 예정: 재관찰로 이탈, 잔류 판정, 순찰 중 자동 기록과 조회, 관찰 지점 인식" width="900">
+</p>
+
+위 경계 그림이 파일과 모듈 사이의 약속이라면, 이 그림은 주행 중에 무엇을 보고 어떻게 움직이는지를 역할 이름으로 보여 줍니다(중간발표 구조 그림). 카메라는 IF-01, 주행 방향 예측은 IF-03, 탐지는 IF-04와 IF-05, 출력은 IF-07과 IF-08에 해당합니다.
+그림 원본은 [images/drive-pipeline.svg](images/drive-pipeline.svg)입니다. 판단 규칙이 바뀌면 그림도 함께 고칩니다.
+
 ---
 
 ## IF-01 카메라 → 프로그램 `[후기반영]`
@@ -48,7 +57,7 @@
 
 | 항목 | 내용 |
 |------|------|
-| 보내는 쪽 | `aicar/gi.py` (규칙 COL-01) |
+| 보내는 쪽 | `aicar/gi.py` 모드 1 주행 이미지 (규칙 COL-01). 모드 2 객체 탐지 이미지는 원본 640×480을 `aicar/yolo_raw/<날짜>/`에 저장하고 `aicar/label.py`로 라벨링 |
 | 받는 쪽 | `aicar/dl.py`, `yolo/train/train_all.ipynb` 1부 (`aicarA.ipynb`와 같음) |
 | 저장 위치 | `aicar/<프로젝트>/` |
 | 파일 이름 | `P0001__+12.png`: 시작 문자 1, 번호 4자리, 빈칸 2자리(`__`, 증강 라벨용, 예 `_R`), 부호, 조향각 2자리 |
@@ -94,7 +103,7 @@ aicar/<프로젝트>/
 | 모델 | 폴더 이름 | 입력 크기 | 쓰는 클래스 | 학습 |
 |------|-----------|-----------|-------------|------|
 | 사람 | `person_yolo26n_ncnn` | 416 | `person` | COCO 사전학습 그대로 (변환만) |
-| 동물 | `animal_yolo26n_ncnn` | 640 | `roe_deer`, `wild_boar` | 팀 데이터로 학습 |
+| 동물 | `animal_yolo26n_ncnn` | 640 | `wild_boar` (지금 시험용으로 멧돼지만. 노루는 `ANIMAL_NAMES`에 `roe_deer`를 다시 넣으면 씀) | 팀 데이터로 학습 |
 
 클래스 번호와 이름 (`yolo/train/data.yaml`):
 
@@ -194,7 +203,7 @@ Pi 본체 전압만 봅니다. 서보 전원선이 빠진 것은 알 수 없습�
 
 | 함수 | 입력 | 출력 | 실패하면 |
 |------|------|------|----------|
-| `start(kind, sec, s)` | `kind` = `'sound_a'`, `'sound_b'`, `'sound_led'` 중 하나, `sec` = `STIMULUS_SEC`, 설정 | 켜면 `True`. 바로 돌아오고 `sec` 뒤 스스로 꺼짐 | 소리 파일이 없거나 재생 프로그램을 못 열면 `False`와 터미널에 원인. LED를 못 열면 소리만 |
+| `start(kind, sec, s)` | `kind` = `'sound_a'`, `'sound_b'`, `'sound_led'`, `'led'`(LED만) 중 하나, `sec` = `STIMULUS_SEC`, 설정 | 켜면 `True`. 바로 돌아오고 `sec` 뒤 스스로 꺼짐 | 소리 파일이 없거나 재생 프로그램을 못 열면 `False`와 터미널에 원인. LED를 못 열면 소리만 |
 | `stop()` | 없음 | 없음. 즉시 끄고 남은 시간도 지움 | 예외를 밖으로 내지 않고 출력만 (끄는 함수가 멈추면 안 되므로) |
 | `active()` | 없음 | 켜져 있으면 `True` | |
 | `close()` | 없음 | 끄고 LED 핀 해제. ar.py 종료 정리에서 부름 | 출력만 |
@@ -262,6 +271,7 @@ Pi 본체 전압만 봅니다. 서보 전원선이 빠진 것은 알 수 없습�
 |------|-------------------|------|------|
 | `runtime/settings.json` | GUI [저장] → ar.py | 설정값 전체 (`settings.SCHEMA`의 키) | ar.py 가 0.5초마다 바뀌었는지 확인하고 바로 반영 |
 | `runtime/control.json` | GUI 실험 버튼 → ar.py | `{"id", "cmd", "args", "time"}` 명령 1개 | ar.py 가 프레임마다 확인, 같은 `id`는 한 번만 실행 |
+| `runtime/sequences.json` | GUI 시퀀스 편집 [저장] → ar.py (`scenario.py`) | 시나리오 시퀀스별 세부 단계 | 시나리오를 시작할 때마다 다시 읽음. 틀린 시퀀스는 그것만 기본값 |
 | `runtime/status.json` | ar.py → GUI | 상태, 사람/동물, 서보 각도, 자극, 마지막 명령 결과 | ar.py 가 1초마다 씀. 3초보다 오래되면 GUI 는 "ar.py 꺼짐" |
 
 실험 명령 (`control.COMMANDS`):
@@ -275,6 +285,8 @@ Pi 본체 전압만 봅니다. 서보 전원선이 빠진 것은 알 수 없습�
 | `stim_start` | `kind` | 자극 시작. 사람이 보이면 거부 |
 | `stim_stop` | | 자극 정지 |
 | `log_test` | `result` | 지금 화면 사진과 함께 시험 이벤트(`species: "test"`) 기록 |
+| `scenario_start` | `id` | 시나리오를 처음부터 순서대로 실행 (바퀴는 세움). 사람이 보이면 거부, 실행 중 사람이 보이면 중지 |
+| `scenario_stop` | | 실행 중인 시나리오 중지, 부저, 전조등, 자극 끔 |
 
 - 탐지가 꺼졌거나 멈추면 `stim_start`와 서보 명령은 거부합니다. 설정 `ALLOW_WITHOUT_DETECT`를 켜면 허용하고, GUI 상태 칸에 경고를 띄웁니다.
 - 서보 명령 뒤에는 자동 조준이 `MANUAL_OVERRIDE_SEC` 동안 쉽니다. 사람이 보이면 서보 명령(`aim_center`, `aim_angle`, `aim_point`)과 키보드 서보 키는 거부합니다.

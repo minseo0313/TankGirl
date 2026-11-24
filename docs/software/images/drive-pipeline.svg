@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title description">
+  <title id="title">자율주행 중 기본 동작</title>
+  <desc id="description">카메라에서 주행 방향 예측과 사람, 멧돼지 탐지로 갈라진다. 조향각, 보임 / 안 보임, 거리를 판단에 전달한다. 하나라도 해당하면 바퀴 정지, 그 밖에는 조향각대로 주행한다. 판단은 바퀴 모터, 부저와 전조등, 카메라 서보에 연결되고, 서보는 카메라 방향을 바꾼다. 점선은 예정이다.</desc>
+  <style>
+    text { font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; font-weight: 400; fill: #1D1D1F; }
+    .background { fill: #FFFFFF; }
+    .box { fill: #FFFFFF; stroke: #D2D2D7; stroke-width: 1.5; }
+    .heading { font-size: 22px; font-weight: 600; }
+    .secondary { font-size: 17px; fill: #6E6E73; }
+    .label { font-size: 16px; fill: #6E6E73; }
+    .column { font-size: 16px; font-weight: 600; fill: #6E6E73; }
+    .body { font-size: 17px; }
+    .strong { font-size: 17px; font-weight: 600; }
+    .decision { stroke: #0071E3; stroke-width: 2.5; }
+    .accent { fill: #0071E3; }
+    .line { fill: none; stroke: #86868B; stroke-width: 2; }
+    .arrow { marker-end: url(#arrow); }
+    .return { stroke-width: 1.5; }
+    .planned { stroke-dasharray: 6 5; }
+    .divider { stroke: #D2D2D7; stroke-width: 1; }
+    .tip { fill: #86868B; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path class="tip" d="M0 0 L8 4 L0 8 Z"/>
+    </marker>
+  </defs>
+  <rect class="background" width="1280" height="720"/>
+  <text class="label" x="48" y="64">자율주행 중 기본 동작</text>
+  <!-- 범례: 지금 동작 -->
+  <rect class="box" x="988" y="48" width="28" height="20" rx="4"/>
+  <text class="label" x="1026" y="64">지금 동작</text>
+  <!-- 범례: 예정 -->
+  <rect class="box planned" x="1140" y="48" width="28" height="20" rx="4"/>
+  <text class="label" x="1178" y="64">예정</text>
+
+  <text class="column" x="72" y="118">입력</text>
+  <text class="column" x="280" y="118">모델</text>
+  <text class="column" x="662" y="118">판단</text>
+  <text class="column" x="1056" y="118">출력</text>
+
+  <!-- 연결선: 카메라에서 두 모델로 분기 -->
+  <path class="line" d="M228 256 H254"/>
+  <path class="line arrow" d="M254 256 V204 H280"/>
+  <path class="line arrow" d="M254 256 V384 H280"/>
+  <!-- 연결선: 모델과 거리센서에서 판단으로 -->
+  <path class="line arrow" d="M540 204 H662"/>
+  <text class="label" x="601" y="190" text-anchor="middle">조향각</text>
+  <path class="line arrow" d="M540 384 H662"/>
+  <text class="label" x="601" y="370" text-anchor="middle">보임 / 안 보임</text>
+  <path class="line arrow" d="M228 510 H662"/>
+  <text class="label" x="445" y="496" text-anchor="middle">거리</text>
+  <!-- 연결선: 판단에서 세 출력으로 -->
+  <path class="line arrow" d="M1004 203 H1056"/>
+  <path class="line arrow" d="M1004 341 H1056"/>
+  <path class="line arrow" d="M1004 479 H1056"/>
+  <!-- 연결선: 카메라 서보에서 카메라로 되돌아오는 외곽 통로 -->
+  <path class="line return arrow" d="M1144 528 V572 H48 V256 H72"/>
+  <text class="label" x="570" y="599" text-anchor="middle">카메라 방향을 바꿈</text>
+  <!-- 연결선: 판단에서 예정으로 -->
+  <path class="line planned arrow" d="M830 532 V616"/>
+
+  <!-- 카메라 -->
+  <g>
+    <rect class="box" x="72" y="200" width="156" height="112" rx="12"/>
+    <text class="heading" x="88" y="242">카메라</text>
+    <text class="secondary" x="88" y="275">서보 위에 달림</text>
+  </g>
+  <!-- 거리센서 -->
+  <g>
+    <rect class="box" x="72" y="464" width="156" height="92" rx="12"/>
+    <text class="heading" x="88" y="501">거리센서</text>
+    <text class="secondary" x="88" y="534">켰을 때만</text>
+  </g>
+  <!-- 주행 방향 예측 -->
+  <g>
+    <rect class="box" x="280" y="146" width="260" height="116" rx="12"/>
+    <text class="heading" x="296" y="190">주행 방향 예측</text>
+    <text class="secondary" x="296" y="226">(CNN) 차선 → 조향각</text>
+  </g>
+  <!-- 사람, 멧돼지 탐지 -->
+  <g>
+    <rect class="box" x="280" y="326" width="260" height="116" rx="12"/>
+    <text class="heading" x="296" y="370">사람, 멧돼지 탐지</text>
+    <text class="secondary" x="296" y="406">(YOLO) 주행과 따로 실행</text>
+  </g>
+  <!-- 판단 -->
+  <g>
+    <rect class="box decision" x="662" y="142" width="342" height="390" rx="12"/>
+    <text class="heading accent" x="682" y="182">판단</text>
+    <text class="strong" x="682" y="228">하나라도 해당하면 바퀴 정지</text>
+    <text class="body" x="690" y="268">사람이 보임 → 기피 자극 끔</text>
+    <text class="body" x="690" y="298">멧돼지만 보임 → 경적 한 번, 전조등</text>
+    <text class="body" x="690" y="328">장애물이 가까움</text>
+    <text class="body" x="690" y="358">수동 정지 키</text>
+    <path class="divider" d="M682 388 H984"/>
+    <text class="strong" x="682" y="430">그 밖에는 조향각대로 주행</text>
+    <text class="secondary" x="682" y="469">보이지 않게 되고 1초 뒤 다시 주행</text>
+  </g>
+  <!-- 바퀴 모터 -->
+  <g>
+    <rect class="box" x="1056" y="154" width="176" height="98" rx="12"/>
+    <text class="heading" x="1072" y="193">바퀴 모터</text>
+    <text class="secondary" x="1072" y="226">좌우 속도로 방향</text>
+  </g>
+  <!-- 부저와 전조등 -->
+  <g>
+    <rect class="box" x="1056" y="292" width="176" height="98" rx="12"/>
+    <text class="heading" x="1072" y="331">부저와 전조등</text>
+    <text class="secondary" x="1072" y="364">경적, 흰색 불빛</text>
+  </g>
+  <!-- 카메라 서보 -->
+  <g>
+    <rect class="box" x="1056" y="430" width="176" height="98" rx="12"/>
+    <text class="heading" x="1072" y="459">카메라 서보</text>
+    <text class="secondary" x="1072" y="486"><tspan x="1072">천천히 계속 왕복, </tspan><tspan x="1072" dy="22">보이면 멈춤</tspan></text>
+  </g>
+  <!-- 예정 띠 -->
+  <g>
+    <rect class="box planned" x="48" y="616" width="1184" height="56" rx="12"/>
+    <text class="secondary" x="72" y="650">예정: 재관찰로 이탈, 잔류 판정 / 순찰 중 자동 기록과 조회 / 관찰 지점 인식</text>
+  </g>
+</svg>
