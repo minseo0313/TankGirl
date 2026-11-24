@@ -50,6 +50,8 @@ SCHEMA = [
     P('SERVO_UP', 1, '서보 조준', '위아래 서보(1번) 방향 (반대로 돌면 바꾸기)', choices=(1, -1), names=DIRECTION, rule='AIM-02'),
     P('AIM_MAX_STEP_DEG', 10, '서보 조준', '자동 조준 속도 (한 번에 도는 각도, 클수록 빠름)', 1, 90, rule='AIM-02'),
     P('SERVO_SWEEP_STEP', 2, '서보 조준', '키보드 "계속" 속도 (화면 1장마다 각도, 클수록 빠름)', 1, 20, rule='AIM-01'),
+    P('SCAN_ON', True, '서보 조준', '카메라 서보 계속 돌리기 (위아래·좌우 범위 끝에서 끝까지 왕복)', rule='AIM-01'),
+    P('SCAN_DEG_PER_SEC', 1.0, '서보 조준', '서보 계속 돌리기 속도 (도/초, 1 = 가장 느림)', 1.0, 60.0, rule='AIM-01'),
     P('SERVO_STEP', 10, '서보 조준', '키보드 한 번 누를 때 각도', 1, 90, rule='AIM-01', adv=True),
     P('SERVO_CENTER', 90, '서보 조준', '정면 각도 (도)', 0, 180, rule='AIM-05', adv=True),
     P('AIM_TILT_MIN', 60, '서보 조준', '위아래 최소 각도 (차체에 안 닿게)', 0, 180, rule='AIM-03', adv=True),

@@ -24,7 +24,8 @@
 # [Right]: 제자리 우회전
 # [Down]: 후진
 # O: YOLO 동물·사람 탐지를 켜거나 끕니다 (<프로젝트>/ 안에 탐지 모델이 있을 때).
-#        사람이 보이면 정지(적색 신호와 같음), 사람 없이 노루·멧돼지만 보이면 경적을 울립니다.
+#        사람이 보이면 정지(적색 신호와 같음), 사람 없이 동물만 보이면 정지하고 경적 한 번과 전조등.
+#        보이지 않게 되면 원래대로 주행합니다. 카메라 서보는 설정 SCAN_ON 이면 계속 위아래·좌우로 돕니다.
 #
 #
 #                                                               
@@ -250,6 +251,10 @@ scenarioHorn = False                  # 시나리오가 켠 부저([H] 경적과
 scenarioLamp = False                  # 시나리오가 켠 전조등([L] 과 같은 네오픽셀)
 AUTO_SCENARIO = 'S-A'                 # 설정 AUTO_SCENARIO 가 없는 번호일 때 쓰는 자동 실행 시나리오
 AUTO_CONFIRM_SEC = 0.5                # 동물이 이만큼 계속 보여야 자동 대응 (한두 프레임 오탐으로 울리지 않게, DET-03)
+ANIMAL_HORN_SEC = 0.5                 # 동물이 새로 보이면 부저를 이만큼 한 번 "빵"
+SCAN_MAX_DT = 0.2                     # 서보 계속 돌리기: 한 프레임이 오래 걸려도 이 시간만큼만 움직임 (한 번에 튀지 않게)
+scanPos = {}                          # 서보 계속 돌리기: 이름 → 지금 각도 (소수, 프레임 사이 조금씩 쌓임)
+scanDir = {}                          # 서보 계속 돌리기: 이름 → +1 / -1
 # 서보 키 (숫자열, 숫자 키패드, 소문자). 누르면 자동 조준을 MANUAL_OVERRIDE_SEC 동안 쉼 (AIM-06)
 SERVO_MANUAL_KEYS = {ord(c) for c in '123450qwert'} | {0x80 + ord(c) for c in '123450'}
 
@@ -267,6 +272,26 @@ def aimHold():
         servoCancelTimer(name)
         if servo is not None:            # 없는 서보는 조용히 건너뜀 (프레임마다 오류 출력 방지)
             servoSet(servo, name, None, '')
+
+def scanStep(dt):
+    '''서보 1(위아래), 2(좌우)를 설정 범위 끝에서 끝까지 SCAN_DEG_PER_SEC 일정한 속도로 왕복합니다.'''
+    s = SETTINGS
+    for servo, name, lo, hi in ((servo1, SERVO1_NAME, s['AIM_TILT_MIN'], s['AIM_TILT_MAX']),
+                                (servo2, SERVO2_NAME, s['AIM_PAN_MIN'], s['AIM_PAN_MAX'])):
+        if servo is None:
+            continue
+        pos = aim.clamp(scanPos.get(name, servoAngle[name]), lo, hi) + scanDir.get(name, 1) * s['SCAN_DEG_PER_SEC'] * dt
+        if pos >= hi: pos, scanDir[name] = hi, -1
+        elif pos <= lo: pos, scanDir[name] = lo, 1
+        scanPos[name] = pos
+        if int(round(pos)) != servoAngle[name]:
+            servoMoveTo(servo, name, int(round(pos)), '', release=False)
+
+def scanPause():
+    '''멈춘 자리에서 SERVO_HOLD_SEC 뒤 힘을 풉니다 (신호를 계속 주면 떨림). 다시 돌 때는 그 자리에서 이어 감.'''
+    for servo, name in ((servo1, SERVO1_NAME), (servo2, SERVO2_NAME)):
+        if servo is not None and scanPos.pop(name, None) is not None:
+            servoMoveTo(servo, name, servoAngle[name], '')
 
 aimer = aim.Aimer(lambda: (servoAngle[SERVO1_NAME], servoAngle[SERVO2_NAME]), aimMove, aimHold)
 stimulus = stim.Stimulus(BASE_DIR)
@@ -640,6 +665,9 @@ def main():
     lastCommand = ''             # 마지막 실험 명령 결과 (설정 GUI 에 표시)
     animalSince = None           # 동물이 계속 보이기 시작한 시각 (자동 대응 확정용)
     lastAutoScare = -1e9         # 마지막 자동 대응 시각 (AUTO_SCARE_COOLDOWN)
+    animalStop = False           # 동물이 보여 멈춘 상태 (사라지면 원래대로 주행, 전조등 켬)
+    animalHornUntil = 0.0        # 동물이 새로 보였을 때 부저 "빵" 끝 시각
+    scanTime = None              # 서보 계속 돌리기: 마지막으로 움직인 시각 (None = 멈춰 있음)
 
     #----------------------------------------------------------------------------------------
     while True:
@@ -653,7 +681,7 @@ def main():
             print('[설정] 바뀐 값을 반영했습니다')
         if GPIO.input(LIGHT_SENSOR): CDS = 'NIGHT'     # 빛 감지 센서 
         else: CDS = 'DAY'
-        if scenarioLamp: nx.lamp(255,255,255)          # 시나리오가 켠 전조등이 먼저
+        if scenarioLamp or animalStop: nx.lamp(255,255,255)   # 시나리오, 동물 정지가 켠 전조등이 먼저
         elif lightMode == 'AUTO' and CDS == 'NIGHT': nx.lamp(255,255,255)  # 전조등 자동 On
         elif lightCar == 'ON':  nx.lamp(255,255,255)   # 전조등 수동 On
         elif lightCar == 'POLICE 1': nx.policeCar1()   # Police Car 1
@@ -664,7 +692,7 @@ def main():
         elif lightCar == 'PATROL': nx.patrol()         # Patrol Car
         elif lightCar == 'OFF' or lightCar == ' ': nx.lamp(0,0,0)        # 전조등 Off
         # 경적 -------------------------------------------------------------------------------
-        if horn or scenarioHorn:                       # 시나리오가 켠 부저도 여기서 울림
+        if horn or scenarioHorn or startCycle < animalHornUntil:   # 시나리오, 동물 "빵" 부저도 여기서 울림
             GPIO.output(BUZZER,GPIO.HIGH)
             if horn: horn -= 1                         # 경적 유지 시간 감소
         else: 
@@ -750,8 +778,6 @@ def main():
         boxes = []
         if DETECT_ON:
             personSeen, animalSeen, boxes, inferMs = detector.state()
-            if animalSeen and not personSeen and not SETTINGS['AUTO_SCARE']:
-                horn = 5                                 # 5 프레임 동안 경적 (보이는 동안 계속). 자동 대응을 켜면 S-A 가 대신 함
             if VIEW_FLAG:
                 for x1, y1, x2, y2, name, conf in boxes:
                     color = YELLOW if name == 'person' else RED
@@ -763,6 +789,15 @@ def main():
                     cv.putText(viewWin, f'YOLO {inferMs:4d} mS', (560,20), cv.FONT_HERSHEY_COMPLEX_SMALL, 1, WHITE)
                 if personSeen:
                     cv.putText(viewWin, 'PERSON STOP', (300,250), cv.FONT_HERSHEY_COMPLEX_SMALL, 2, YELLOW)
+        # 사람 없이 동물만 보이면 멈추고 "빵" 한 번 + 전조등. 사라지면(DETECT_HOLD_SEC 뒤) 원래대로 주행 ----
+        # 자동 대응(AUTO_SCARE)을 켜면 시나리오가 대신 함
+        wasAnimalStop = animalStop
+        animalStop = animalSeen and not personSeen and not SETTINGS['AUTO_SCARE']
+        if animalStop and not wasAnimalStop:
+            animalHornUntil = startCycle + ANIMAL_HORN_SEC
+            print('[탐지] 동물 → 정지, 빵 + 전조등')
+        elif wasAnimalStop and not animalStop:
+            print('[탐지] 동물 사라짐 → 원래대로')
         # 사람이 보이면 자극 끄고 서보 멈춤 (SAFE-06 일부). 멈춰 있을 때만 동물 쪽 자동 조준 (AIM-02) ----
         # 탐지가 꺼졌거나 오류로 멈추면 사람을 확인할 수 없으므로 자극을 끔 (SAFE-08 일부)
         detectOk = DETECT_ON and detector is not None and detector.error is None
@@ -777,6 +812,15 @@ def main():
             target = aim.largestBox([b for b in boxes if b[4] in yd.ANIMAL_NAMES])
             if target is not None:
                 aimer.aimAt(target, SETTINGS)
+        # 카메라 서보 계속 돌리기 (SCAN_ON). 사람·동물이 보이거나, 시나리오, 키보드 서보 조작 중에는 그 자리에서 멈춤 ----
+        if SETTINGS['SCAN_ON'] and not personSeen and not animalSeen and (scenarioRun is None or scenarioRun.done) \
+                and startCycle >= aimer.pausedUntil and not any(servoSweep.values()):
+            scanStep(min(startCycle - scanTime, SCAN_MAX_DT) if scanTime is not None else 0.0)
+            scanTime = startCycle
+        elif scanTime is not None:
+            scanTime = None
+            if personSeen: scanPos.clear()               # 사람: 위에서 이미 힘을 풂 (다시 신호를 주지 않음)
+            else: scanPause()
         # 시나리오 시험: 바퀴는 세우고 순서대로 실행 (탐지가 꺼져 있어도 진행). 탐지가 켜져 있고 사람이 보이면 중지 ----
         # 동물이 AUTO_CONFIRM_SEC 동안 계속 보이면 자동 대응 시나리오 (사람이 보이면 안 함, 쉬는 시간 지켜서)
         animalSince = (animalSince or startCycle) if animalSeen and not personSeen else None
@@ -857,8 +901,8 @@ def main():
         # 모터 PWM 값 표시 --------------------------------------------------------------------
         cv.putText(viewWin, f'{mL:3d}', (15,340),cv.FONT_HERSHEY_COMPLEX_SMALL,1,WHITE)
         cv.putText(viewWin, f'{mR:3d}', (735,340),cv.FONT_HERSHEY_COMPLEX_SMALL,1,WHITE)
-        # 자율 주행 모드에서 Red 신호(0 보다 큰 수)이거나 사람이 보이면 정지 -------------------------
-        if signRedDelay > 0 or personSeen:
+        # 자율 주행 모드에서 Red 신호(0 보다 큰 수)이거나 사람·동물이 보이면 정지. 사라지면 autoRun 그대로라 다시 주행 --
+        if signRedDelay > 0 or personSeen or animalStop:
             if autoRun or preKey == 82:           # 자율주행 모드일 또는 커서 Up 키
                 mL = 0; mR = 0
         # 왼쪽 모터, 오른쪽 모터 동작 -----------------------------------------------------------

@@ -51,6 +51,8 @@
 | `SERVO_MIN` / `SERVO_MAX` | 0 / 180 | 도 | AIM-01 | `aicar/ar.py` `SERVO_MIN`, `SERVO_MAX` | MG90S 180도형 전체 범위 |
 | `SERVO_STEP` | 10 | 도 | AIM-01 | GUI, `aicar/ar.py` `SERVO_STEP` | 한 번 누를 때 이동량 |
 | `SERVO_SWEEP_STEP` | 2 | 도/프레임 | AIM-01 | GUI, `aicar/ar.py` `SERVO_SWEEP_STEP` | 약 1초에 60도 |
+| `SCAN_ON` | 켜짐 | 켜기/끄기 | AIM-01 | GUI, `aicar/ar.py` `scanStep` | 카메라 서보를 위아래·좌우 범위(`AIM_TILT_*`, `AIM_PAN_*`) 끝에서 끝까지 계속 왕복. 사람·동물이 보이면 그 자리에서 멈춤 |
+| `SCAN_DEG_PER_SEC` | 1.0 | 도/초 | AIM-01 | GUI | 가장 느린 값. 좌우 0~180°를 한 번 가는 데 3분 |
 | `SERVO_HOLD_SEC` | 1.5 | 초 | AIM-01, AIM-05 | GUI, `aicar/ar.py` `SERVO_HOLD_SEC` | 0.5초에서는 90도 이동이 중간에 멈춤 (2026-10-29 영상) |
 | `SERVO_LEFT` | 1 | 부호 | AIM-01, AIM-02 | GUI, `aicar/ar.py` `SERVO_LEFT` | 각도가 커지면 왼쪽. 반대로 돌면 -1 |
 | `SERVO_UP` | 1 | 부호 | AIM-02 | GUI | 제안. 각도가 커지면 위. 반대로 돌면 -1 |
